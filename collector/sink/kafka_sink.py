@@ -11,10 +11,12 @@ class KafkaSink:
         self._producer: AIOKafkaProducer | None = None
 
     async def start(self) -> None:
+        # 说明：为避免在不同平台频繁踩压缩库依赖（lz4/snappy 等），
+        # 这里暂不在客户端启用压缩，保持默认（无压缩）。
+        # 如需开启，再显式设置 compression_type 并保证依赖已安装。
         self._producer = AIOKafkaProducer(
             bootstrap_servers=self._cfg["bootstrap_servers"],
             linger_ms=int(self._cfg.get("linger_ms", 50)),
-            compression_type=self._cfg.get("compression_type", "lz4"),
             max_batch_size=int(self._cfg.get("batch_size", 32768)),
         )
         await self._producer.start()
