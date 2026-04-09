@@ -8,11 +8,11 @@
 - 采集器已落地到 collector/ 目录并完成运行验证。
 - TradeEvent 输出字段做了兼容增强：同时保留 eventTime 与 time（同值，毫秒时间戳）。
 - quoteQty 按 price * qty 计算（Decimal），未沿用早期示例里“直接等于 qty”的写法。
-- 为降低环境依赖故障，Kafka 客户端发送端临时关闭 compression_type（不强制 lz4）；当前代码以稳定优先。
+- Kafka 客户端压缩已在新分支恢复并验证成功（compression_type=lz4）。
 - main.py 增加了发送计数与异常日志（trade/depth 每 200 条打印一次，单条发送失败不影响整体连接）。
 
 3) 最近踩坑与结论（注意事项）
-- “Compression library for lz4 not found” 属于 aiokafka 客户端依赖问题；已通过代码侧关闭客户端压缩规避反复报错。
+- “Compression library for lz4 not found” 属于 aiokafka 客户端依赖问题；安装 lz4 后已恢复客户端压缩并运行正常。
 - Binance 连通性判断不能依赖 ping（ICMP 可能被限）；应以 websocket 最小收包测试与 curl 9443 连通为准。
 - kafka-console-consumer 出现“0 messages”不代表无数据，需结合：
   - kafka-get-offsets.sh 看各分区 offset；
@@ -21,5 +21,5 @@
 - 当前已验证：trade/depth 两个 topic 均有分区 offset 增长，链路是通的。
 
 4) 后续执行建议（保持与规划对齐）
-- 如需恢复客户端压缩，再启用 compression_type 并固定安装 lz4/snappy 依赖后再切换。
+- 后续保持客户端压缩时，环境初始化需固定包含 lz4（或对应压缩算法依赖）。
 - 进入 Phase 3 前，先固化 Phase 2 验收证据：10-30 分钟稳定运行日志、offset 增长截图、分区消费样本。
