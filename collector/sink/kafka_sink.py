@@ -11,16 +11,28 @@ class KafkaSink:
         self._producer: AIOKafkaProducer | None = None
 
     async def start(self) -> None:
-        # 说明：为避免在不同平台频繁踩压缩库依赖（lz4/snappy 等），
-        # 这里暂不在客户端启用压缩，保持默认（无压缩）。
-        # 如需开启，再显式设置 compression_type 并保证依赖已安装。
-        self._producer = AIOKafkaProducer(
-            bootstrap_servers=self._cfg["bootstrap_servers"],
-            linger_ms=int(self._cfg.get("linger_ms", 50)),
-            max_batch_size=int(self._cfg.get("batch_size", 32768)),
-        )
+        compression_type = self._cfg.get("compression_type")
+        try:
+            self._producer = AIOKafkaProducer(
+                bootstrap_servers=self._cfg["bootstrap_servers"],
+                linger_ms=int(self._cfg.get("linger_ms", 50)),
+                compression_type=compression_type,
+                max_batch_size=int(self._cfg.get("batch_size", 32768)),
+            )
+        except RuntimeError as e:
+            if compression_type:
+                raise RuntimeError(
+                    f"Kafka compression '{compression_type}' unavailable. "
+                    "Install the matching library in this venv "
+                    "(e.g. lz4/snappy/zstandard) or clear compression_type in config.yaml."
+                ) from e
+            raise
         await self._producer.start()
-        logger.info("Kafka producer started: %s", self._cfg["bootstrap_servers"])
+        logger.info(
+            "Kafka producer started: %s (compression=%s)",
+            self._cfg["bootstrap_servers"],
+            compression_type or "none",
+        )
 
     async def stop(self) -> None:
         if self._producer is not None:
