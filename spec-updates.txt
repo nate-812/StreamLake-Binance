@@ -1,0 +1,19 @@
+kafka启停
+
+/opt/kafka/bin/kafka-server-start.sh -daemon /opt/kafka/config/kraft/server.properties
+
+/opt/kafka/bin/kafka-server-stop.sh
+
+检查主题列表
+/opt/kafka/bin/kafka-topics.sh --bootstrap-server 192.168.1.10:9092 --list
+
+查看py脚本运行情况
+systemctl is-enabled streamlake-collector && systemctl is-active streamlake-collector
+
+手动启停py脚本
+systemctl start streamlake-collector
+systemctl stop streamlake-collector
+systemctl restart streamlake-collector
+
+
+flink的2.0.0没有稳定版，我下载了flink2.0.1
