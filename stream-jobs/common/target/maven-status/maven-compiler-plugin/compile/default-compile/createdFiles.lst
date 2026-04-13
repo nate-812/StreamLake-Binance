@@ -1,0 +1,3 @@
+com/streamlake/common/model/TradeEvent.class
+com/streamlake/common/deserializer/TradeEventDeserializer.class
+com/streamlake/common/model/KlineBar.class
