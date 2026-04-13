@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.SerializationFeature;
 import com.streamlake.common.deserializer.TradeEventDeserializer;
 import com.streamlake.common.model.TradeEvent;
 import com.streamlake.common.model.WhaleAlert;
+import org.apache.flink.api.common.eventtime.SerializableTimestampAssigner;
 import org.apache.flink.api.common.eventtime.WatermarkStrategy;
 import org.apache.flink.api.common.functions.OpenContext;
 import org.apache.flink.api.common.serialization.SimpleStringSchema;
@@ -90,7 +91,12 @@ public class WhaleCepJob {
                 .fromSource(kafkaSource, WatermarkStrategy.noWatermarks(), "kafka-trade-source")
                 .map(deserializer::deserialize)
                 .returns(TradeEvent.class)
-                .filter(t -> t.getSymbol() != null && t.getPrice() != null && t.getQty() != null);
+                .filter(t -> t.getSymbol() != null && t.getPrice() != null && t.getQty() != null)
+                .assignTimestampsAndWatermarks(
+                        WatermarkStrategy.<TradeEvent>forBoundedOutOfOrderness(Duration.ofSeconds(5))
+                                .withTimestampAssigner(
+                                        (SerializableTimestampAssigner<TradeEvent>) (event, ts) -> event.getEventTime())
+                );       // 第一遍忘记加上水位线推进，导致事件时间永远停在-Long.MAX_VALUE，系统不知道时间一直在走
 
         // ── CEP Pattern：60 秒内 3 笔以上大单 ────────────────────────────
         // 注意：Pattern.within() 在 Flink 2.0 中接受 java.time.Duration

@@ -17,3 +17,25 @@ systemctl restart streamlake-collector
 
 
 flink的2.0.0没有稳定版，我下载了flink2.0.1
+
+进Doris
+mysql -h 192.168.1.10 -P 9030 -u root
+
+# 任务启动
+/opt/flink/bin/flink run -d \
+  -c com.streamlake.kline.KlineAggregationJob \
+  /opt/StreamLake-Binance/stream-jobs/job-kline/target/job-kline-1.0.0-SNAPSHOT.jar
+
+
+/opt/flink/bin/flink run -d \
+  -c com.streamlake.cep.WhaleCepJob \
+  /opt/StreamLake-Binance/stream-jobs/job-whale-cep/target/job-whale-cep-1.0.0-SNAPSHOT.jar
+
+
+/opt/flink/bin/flink run -d \
+  -c com.streamlake.risk.RiskControlJob \
+  /opt/StreamLake-Binance/stream-jobs/job-risk-control/target/job-risk-control-1.0.0-SNAPSHOT.jar
+
+检查任务状态 /opt/flink/bin/flink list
+
+mysql -h 192.168.1.10 -P 9030 -uroot -e "USE streamlake; SELECT COUNT(*) FROM whale_alert;"
