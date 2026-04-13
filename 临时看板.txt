@@ -1,0 +1,308 @@
+# OSS 连通性与目录结构排查（在 data1 上执行）
+
+## A. 基础环境与变量确认
+date
+hostname
+echo "OSS_ACCESS_KEY_ID=${OSS_ACCESS_KEY_ID:+SET}"
+echo "OSS_ACCESS_KEY_SECRET=${OSS_ACCESS_KEY_SECRET:+SET}"
+echo "FLINK_HOME=${FLINK_HOME}"
+echo "JAVA_HOME=${JAVA_HOME}"
+
+## B. DNS / 端口连通性（内网 endpoint）
+getent hosts oss-ap-northeast-1-internal.aliyuncs.com
+ping -c 2 oss-ap-northeast-1-internal.aliyuncs.com || true
+curl -I --connect-timeout 5 https://oss-ap-northeast-1-internal.aliyuncs.com
+curl -I --connect-timeout 5 https://streamlake-paimon-tokyo.oss-ap-northeast-1.aliyuncs.com
+
+## C. Flink 侧 OSS 配置检查
+grep -n "fs.oss\\|state.checkpoints.dir\\|state.savepoints.dir" /opt/flink/conf/flink-conf.yaml
+
+## D. Bucket 与目录结构（任选一种工具）
+# D1: 如果安装了 ossutil（推荐）
+ossutil ls oss://streamlake-paimon-tokyo/
+ossutil ls oss://streamlake-paimon-tokyo/flink-checkpoints/
+ossutil ls oss://streamlake-paimon-tokyo/flink-savepoints/
+ossutil ls oss://streamlake-paimon-tokyo/warehouse/
+ossutil ls -r oss://streamlake-paimon-tokyo/warehouse/ | head -n 100
+
+# D2: 如果没有 ossutil，但有 awscli（S3 兼容方式）
+AWS_ACCESS_KEY_ID=$OSS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY=$OSS_ACCESS_KEY_SECRET \
+aws --endpoint-url https://oss-ap-northeast-1-internal.aliyuncs.com s3 ls s3://streamlake-paimon-tokyo/
+
+AWS_ACCESS_KEY_ID=$OSS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY=$OSS_ACCESS_KEY_SECRET \
+aws --endpoint-url https://oss-ap-northeast-1-internal.aliyuncs.com s3 ls s3://streamlake-paimon-tokyo/flink-checkpoints/
+
+AWS_ACCESS_KEY_ID=$OSS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY=$OSS_ACCESS_KEY_SECRET \
+aws --endpoint-url https://oss-ap-northeast-1-internal.aliyuncs.com s3 ls s3://streamlake-paimon-tokyo/warehouse/
+
+## E. Doris Catalog 现状（在 Doris MySQL 客户端里执行）
+SHOW CATALOGS;
+SHOW CREATE CATALOG paimon_oss;
+SHOW DATABASES FROM paimon_oss;
+SHOW TABLES FROM paimon_oss.ods;
+
+## F. 快速查询验证（在 Doris MySQL 客户端里执行）
+SELECT COUNT(*) FROM paimon_oss.ods.trade_raw;
+SELECT * FROM paimon_oss.ods.trade_raw LIMIT 5;
+
+## G. Flink 作业与 checkpoint 现状
+/opt/flink/bin/flink list
+grep -n "checkpoint" /opt/flink/log/*.log | tail -n 80
+grep -n "oss\\|s3\\|AccessDenied\\|NoSuchBucket\\|UnknownHost\\|timeout" /opt/flink/log/*.log | tail -n 120
+
+## H. 请把错误原文补在下面（不要改写）
+# 例如：Doris 报错、Flink checkpoint 报错、连接超时报错、权限报错等
+
+
+root@data1:~# date
+hostname
+echo "OSS_ACCESS_KEY_ID=${OSS_ACCESS_KEY_ID:+SET}"
+echo "OSS_ACCESS_KEY_SECRET=${OSS_ACCESS_KEY_SECRET:+SET}"
+echo "FLINK_HOME=${FLINK_HOME}"
+echo "JAVA_HOME=${JAVA_HOME}"
+Mon Apr 13 04:17:49 PM JST 2026
+data1
+OSS_ACCESS_KEY_ID=
+OSS_ACCESS_KEY_SECRET=
+FLINK_HOME=
+JAVA_HOME=/usr/lib/jvm/java-21-openjdk-amd64
+root@data1:~# 
+root@data1:~# getent hosts oss-ap-northeast-1-internal.aliyuncs.com
+ping -c 2 oss-ap-northeast-1-internal.aliyuncs.com || true
+curl -I --connect-timeout 5 https://oss-ap-northeast-1-internal.aliyuncs.com
+curl -I --connect-timeout 5 https://streamlake-paimon-tokyo.oss-ap-northeast-1.aliyuncs.com
+100.114.211.193 oss-ap-northeast-1-internal.aliyuncs.com
+100.114.211.192 oss-ap-northeast-1-internal.aliyuncs.com
+100.114.211.212 oss-ap-northeast-1-internal.aliyuncs.com
+100.114.211.235 oss-ap-northeast-1-internal.aliyuncs.com
+PING oss-ap-northeast-1-internal.aliyuncs.com (100.114.211.235) 56(84) bytes of data.
+64 bytes from 100.114.211.235 (100.114.211.235): icmp_seq=1 ttl=102 time=1.38 ms
+64 bytes from 100.114.211.235 (100.114.211.235): icmp_seq=2 ttl=102 time=1.07 ms
+
+--- oss-ap-northeast-1-internal.aliyuncs.com ping statistics ---
+2 packets transmitted, 2 received, 0% packet loss, time 1001ms
+rtt min/avg/max/mdev = 1.070/1.227/1.384/0.157 ms
+HTTP/1.1 404 Not Found
+Server: AliyunOSS
+Date: Mon, 13 Apr 2026 07:18:07 GMT
+Content-Type: application/xml
+Content-Length: 394
+Connection: keep-alive
+x-oss-request-id: 69DC98AF143E4536391FD5E6
+x-oss-ec: 0015-00000101
+x-oss-err: PD94bWwgdmVyc2lvbj0iMS4wIiBlbmNvZGluZz0iVVRGLTgiPz4KPEVycm9yPgogIDxDb2RlPk5vU3VjaEJ1Y2tldDwvQ29kZT4KICA8TWVzc2FnZT5UaGUgc3BlY2lmaWVkIGJ1Y2tldCBkb2VzIG5vdCBleGlzdC48L01lc3NhZ2U+CiAgPFJlcXVlc3RJZD42OURDOThBRjE0M0U0NTM2MzkxRkQ1RTY8L1JlcXVlc3RJZD4KICA8SG9zdElkPm9zcy1hcC1ub3J0aGVhc3QtMS1pbnRlcm5hbC5hbGl5dW5jcy5jb208L0hvc3RJZD4KICA8QnVja2V0TmFtZT48L0J1Y2tldE5hbWU+CiAgPEVDPjAwMTUtMDAwMDAxMDE8L0VDPgogIDxSZWNvbW1lbmREb2M+aHR0cHM6Ly9hcGkuYWxpYmFiYWNsb3VkLmNvbS90cm91Ymxlc2hvb3Q/cT0wMDE1LTAwMDAwMTAxPC9SZWNvbW1lbmREb2M+CjwvRXJyb3I+Cg==
+
+HTTP/1.1 403 Forbidden
+Server: AliyunOSS
+Date: Mon, 13 Apr 2026 07:18:07 GMT
+Content-Type: application/xml
+Content-Length: 395
+Connection: keep-alive
+x-oss-request-id: 69DC98AFBC25303333FB0189
+x-oss-server-time: 16
+x-oss-ec: 0003-00000002
+x-oss-err: PD94bWwgdmVyc2lvbj0iMS4wIiBlbmNvZGluZz0iVVRGLTgiPz4KPEVycm9yPgogIDxDb2RlPkFjY2Vzc0RlbmllZDwvQ29kZT4KICA8TWVzc2FnZT5Bbm9ueW1vdXMgdXNlciBoYXMgbm8gcmlnaHQgdG8gYWNjZXNzIHRoaXMgYnVja2V0LjwvTWVzc2FnZT4KICA8UmVxdWVzdElkPjY5REM5OEFGQkMyNTMwMzMzM0ZCMDE4OTwvUmVxdWVzdElkPgogIDxIb3N0SWQ+c3RyZWFtbGFrZS1wYWltb24tdG9reW8ub3NzLWFwLW5vcnRoZWFzdC0xLmFsaXl1bmNzLmNvbTwvSG9zdElkPgogIDxFQz4wMDAzLTAwMDAwMDAyPC9FQz4KICA8UmVjb21tZW5kRG9jPmh0dHBzOi8vYXBpLmFsaWJhYmFjbG91ZC5jb20vdHJvdWJsZXNob290P3E9MDAwMy0wMDAwMDAwMjwvUmVjb21tZW5kRG9jPgo8L0Vycm9yPgo=
+
+root@data1:~# grep -n "fs.oss\\|state.checkpoints.dir\\|state.savepoints.dir" /opt/flink/conf/flink-conf.yaml
+grep: /opt/flink/conf/flink-conf.yaml: No such file or directory
+root@data1:~# 
+root@data1:~# ossutil ls oss://streamlake-paimon-tokyo/
+ossutil ls oss://streamlake-paimon-tokyo/flink-checkpoints/
+ossutil ls oss://streamlake-paimon-tokyo/flink-savepoints/
+ossutil ls oss://streamlake-paimon-tokyo/warehouse/
+ossutil ls -r oss://streamlake-paimon-tokyo/warehouse/ | head -n 100
+Command 'ossutil' not found, did you mean:
+  command 'cssutil' from deb crm114 (20100106-10)
+Try: apt install <deb name>
+Command 'ossutil' not found, did you mean:
+  command 'cssutil' from deb crm114 (20100106-10)
+Try: apt install <deb name>
+Command 'ossutil' not found, did you mean:
+  command 'cssutil' from deb crm114 (20100106-10)
+Try: apt install <deb name>
+Command 'ossutil' not found, did you mean:
+  command 'cssutil' from deb crm114 (20100106-10)
+Try: apt install <deb name>
+Command 'ossutil' not found, did you mean:
+  command 'cssutil' from deb crm114 (20100106-10)
+Try: apt install <deb name>
+root@data1:~# AWS_ACCESS_KEY_ID=$OSS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY=$OSS_ACCESS_KEY_SECRET \
+aws --endpoint-url https://oss-ap-northeast-1-internal.aliyuncs.com s3 ls s3://streamlake-paimon-tokyo/
+Command 'aws' not found, but can be installed with:
+snap install aws-cli  # version 1.44.78, or
+apt  install awscli   # version 1.22.34-1
+See 'snap info aws-cli' for additional versions.
+root@data1:~# AWS_ACCESS_KEY_ID=$OSS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY=$OSS_ACCESS_KEY_SECRET \
+aws --endpoint-url https://oss-ap-northeast-1-internal.aliyuncs.com s3 ls s3://streamlake-paimon-tokyo/flink-checkpoints/
+
+AWS_ACCESS_KEY_ID=$OSS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY=$OSS_ACCESS_KEY_SECRET \
+aws --endpoint-url https://oss-ap-northeast-1-internal.aliyuncs.com s3 ls s3://streamlake-paimon-tokyo/warehouse/
+Command 'aws' not found, but can be installed with:
+snap install aws-cli  # version 1.44.78, or
+apt  install awscli   # version 1.22.34-1
+See 'snap info aws-cli' for additional versions.
+Command 'aws' not found, but can be installed with:
+snap install aws-cli  # version 1.44.78, or
+apt  install awscli   # version 1.22.34-1
+See 'snap info aws-cli' for additional versions.
+root@data1:~# 
+root@data1:~# mysql -h 192.168.1.10 -P 9030 -u root
+Welcome to the MySQL monitor.  Commands end with ; or \g.
+Your MySQL connection id is 3
+Server version: 5.7.99 Doris version doris-3.0.0-rc11-2d7acd01be
+
+Copyright (c) 2000, 2026, Oracle and/or its affiliates.
+
+Oracle is a registered trademark of Oracle Corporation and/or its
+affiliates. Other names may be trademarks of their respective
+owners.
+
+Type 'help;' or '\h' for help. Type '\c' to clear the current input statement.
+
+mysql> SHOW CATALOGS;
++-----------+-------------+----------+-----------+-------------------------------+---------------------+------------------------+
+| CatalogId | CatalogName | Type     | IsCurrent | CreateTime                    | LastUpdateTime      | Comment                |
++-----------+-------------+----------+-----------+-------------------------------+---------------------+------------------------+
+|         0 | internal    | internal | yes       | UNRECORDED                    | NULL                | Doris internal catalog |
+|     12376 | paimon_oss  | paimon   |           | 2026-04-13 16:01:15.665084646 | 2026-04-13 16:02:17 |                        |
++-----------+-------------+----------+-----------+-------------------------------+---------------------+------------------------+
+2 rows in set (0.00 sec)
+
+mysql> SHOW CREATE CATALOG paimon_oss;
++------------+---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| Catalog    | CreateCatalog                                                                                                                                                                                                                                                                                                                               |
++------------+---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| paimon_oss | 
+CREATE CATALOG `paimon_oss` PROPERTIES (
+"warehouse" = "oss://streamlake-paimon-tokyo/warehouse",
+"use_meta_cache" = "false",
+"type" = "paimon",
+"oss.secret_key" = "*XXX",
+"oss.endpoint" = "oss-ap-northeast-1-internal.aliyuncs.com",
+"oss.access_key" = "LTAI5tPG5yKpkcnWVGYGJ9yC",
+"create_time" = "2026-04-13 16:01:15.665084646"
+); |
++------------+---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+1 row in set (0.00 sec)
+
+mysql> SHOW DATABASES FROM paimon_oss;
++--------------------+
+| Database           |
++--------------------+
+| information_schema |
+| mysql              |
++--------------------+
+2 rows in set (0.00 sec)
+
+mysql> SHOW TABLES FROM paimon_oss.ods;
+ERROR 1049 (42000): errCode = 2, detailMessage = Unknown database 'ods'
+mysql> SELECT COUNT(*) FROM paimon_oss.ods.trade_raw;
+ERROR 1105 (HY000): errCode = 2, detailMessage = Database [ods] does not exist.
+mysql> SELECT * FROM paimon_oss.ods.trade_raw LIMIT 5;
+ERROR 1105 (HY000): errCode = 2, detailMessage = Database [ods] does not exist.
+mysql> 
+
+
+root@data1:/opt/flink/conf# cat config.yaml 
+# ==============================================================================
+# Java 17 运行环境参数 (严禁删除)
+# ==============================================================================
+env:
+  java:
+    opts:
+      all: --add-exports=java.base/sun.net.util=ALL-UNNAMED --add-exports=java.rmi/sun.rmi.registry=ALL-UNNAMED --add-exports=jdk.compiler/com.sun.tools.javac.api=ALL-UNNAMED --add-exports=jdk.compiler/com.sun.tools.javac.file=ALL-UNNAMED --add-exports=jdk.compiler/com.sun.tools.javac.parser=ALL-UNNAMED --add-exports=jdk.compiler/com.sun.tools.javac.tree=ALL-UNNAMED --add-exports=jdk.compiler/com.sun.tools.javac.util=ALL-UNNAMED --add-exports=java.security.jgss/sun.security.krb5=ALL-UNNAMED --add-opens=java.base/java.lang=ALL-UNNAMED --add-opens=java.base/java.net=ALL-UNNAMED --add-opens=java.base/java.io=ALL-UNNAMED --add-opens=java.base/java.nio=ALL-UNNAMED --add-opens=java.base/sun.nio.ch=ALL-UNNAMED --add-opens=java.base/java.lang.reflect=ALL-UNNAMED --add-opens=java.base/java.text=ALL-UNNAMED --add-opens=java.base/java.time=ALL-UNNAMED --add-opens=java.base/java.util=ALL-UNNAMED --add-opens=java.base/java.util.concurrent=ALL-UNNAMED --add-opens=java.base/java.util.concurrent.atomic=ALL-UNNAMED --add-opens=java.base/java.util.concurrent.locks=ALL-UNNAMED
+
+# ==============================================================================
+# 集群网络配置 (使用 AI 规划的 192.168.1.10)
+# ==============================================================================
+jobmanager:
+  bind-host: 0.0.0.0
+  rpc:
+    address: 192.168.1.10
+    port: 6123
+  memory:
+    process:
+      size: 4096m  # 扩容后的 4G JM
+
+rest:
+  address: 192.168.1.10
+  bind-address: 0.0.0.0
+  port: 8081
+
+# ==============================================================================
+# 任务计算配置
+# ==============================================================================
+taskmanager:
+  bind-host: 0.0.0.0
+  numberOfTaskSlots: 4
+  memory:
+    process:
+      size: 8192m  # 扩容后的 8G TM
+
+parallelism:
+  default: 4
+
+# ==============================================================================
+# 状态后端与 Checkpoint (RocksDB + OSS)
+# ==============================================================================
+execution:
+  checkpointing:
+    interval: 30s
+    mode: EXACTLY_ONCE
+    externalized-checkpoint-retention: RETAIN_ON_CANCELLATION
+
+state:
+  backend:
+    type: rocksdb
+    rocksdb:
+      memory:
+        managed: true
+      localdir: /opt/flink/state
+  checkpoints:
+    dir: oss://streamlake-paimon-tokyo/flink-checkpoints
+    num-retained: 3
+  savepoints:
+    dir: oss://streamlake-paimon-tokyo/flink-savepoints
+
+# ==============================================================================
+# Flink 访问 OSS 配置
+# ==============================================================================
+fs:
+  oss:
+    endpoint: oss-ap-northeast-1-internal.aliyuncs.com
+    accessKeyId: ${OSS_ACCESS_KEY_ID}
+    accessKeySecret: ${OSS_ACCESS_KEY_SECRET}
+root@data1:/opt/flink/conf# 
+
+
+mysql> SHOW DATABASES;
++--------------------+
+| Database           |
++--------------------+
+| __internal_schema  |
+| information_schema |
+| mysql              |
+| streamlake         |
++--------------------+
+4 rows in set (0.00 sec)
+
+mysql> SHOW TABLES FROM streamlake;
++----------------------+
+| Tables_in_streamlake |
++----------------------+
+| ai_diagnosis         |
+| kline_1min           |
+| risk_trigger         |
+| whale_alert          |
++----------------------+
+4 rows in set (0.00 sec)
+
+mysql> SELECT COUNT(*) FROM streamlake.kline_1min;
++----------+
+| count(*) |
++----------+
+|        0 |
++----------+
+1 row in set (0.05 sec)
+
+mysql> 

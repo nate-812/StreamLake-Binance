@@ -140,7 +140,7 @@ public class KlineAggregationJob {
             ps.setBigDecimal(7, bar.getVolume());
             ps.setBigDecimal(8, bar.getQuoteVolume());
             ps.setInt(9, bar.getTradeCount());
-            ps.setBoolean(10, true);             // 精准打入数据库的 sql 语句的占位符。
+            ps.setInt(10, 1);             // Doris 中 is_closed 用 TINYINT(0/1) 更兼容。
             ps.executeUpdate();
         }
 
