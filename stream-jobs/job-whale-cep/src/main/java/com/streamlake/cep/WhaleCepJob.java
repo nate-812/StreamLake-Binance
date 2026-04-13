@@ -62,7 +62,7 @@ public class WhaleCepJob {
         final String consumerGroup   = env("KAFKA_GROUP",       "flink-cep-group");
         final String dorisJdbcUrl    = env("DORIS_JDBC_URL",    "jdbc:mysql://192.168.1.10:9030/streamlake?useSSL=false");
         final String dorisUser       = env("DORIS_USER",        "root");
-        final String dorisPassword   = env("DORIS_PASSWORD",    "123456");
+        final String dorisPassword   = env("DORIS_PASSWORD",    "");
         final String mysqlJdbcUrl    = env("MYSQL_JDBC_URL",    "jdbc:mysql://192.168.1.10:3306/risk_control?useSSL=false");
         final String mysqlUser       = env("MYSQL_USER",        "root");
         final String mysqlPassword   = env("MYSQL_PASSWORD",    "123456");

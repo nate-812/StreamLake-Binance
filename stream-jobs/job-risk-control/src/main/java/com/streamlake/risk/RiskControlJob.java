@@ -65,7 +65,7 @@ public class RiskControlJob {
         final String dorisPassword  = env("DORIS_PASSWORD",    "");
         final String mysqlJdbcUrl   = env("MYSQL_JDBC_URL",    "jdbc:mysql://192.168.1.10:3306/risk_control?useSSL=false");
         final String mysqlUser      = env("MYSQL_USER",        "root");
-        final String mysqlPassword  = env("MYSQL_PASSWORD",    "streamlake");
+        final String mysqlPassword  = env("MYSQL_PASSWORD",    "123456");
         final String redisHost      = env("REDIS_HOST",        "192.168.1.10");
         final int    redisPort      = Integer.parseInt(env("REDIS_PORT", "6379"));            // 从环境变量读取配置
 
