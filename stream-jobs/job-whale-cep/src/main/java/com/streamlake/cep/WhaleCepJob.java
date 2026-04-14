@@ -96,7 +96,8 @@ public class WhaleCepJob {
                         WatermarkStrategy.<TradeEvent>forBoundedOutOfOrderness(Duration.ofSeconds(5))
                                 .withTimestampAssigner(
                                         (SerializableTimestampAssigner<TradeEvent>) (event, ts) -> event.getEventTime())
-                );       // 第一遍忘记加上水位线推进，导致事件时间永远停在-Long.MAX_VALUE，系统不知道时间一直在走
+                                .withIdleness(Duration.ofSeconds(10))
+                );
 
         // ── CEP Pattern：60 秒内 3 笔以上大单 ────────────────────────────
         // 注意：Pattern.within() 在 Flink 2.0 中接受 java.time.Duration
