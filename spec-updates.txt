@@ -38,4 +38,5 @@ mysql -h 192.168.1.10 -P 9030 -u root
 
 检查任务状态 /opt/flink/bin/flink list
 
-mysql -h 192.168.1.10 -P 9030 -uroot -e "USE streamlake; SELECT COUNT(*) FROM whale_alert;"
+mysql -h 192.168.1.10 -P 9030 -uroot
+USE streamlake; SELECT COUNT(*) FROM whale_alert;

@@ -85,6 +85,9 @@ public class WhaleCepJob {
                 .setGroupId(consumerGroup)
                 .setStartingOffsets(OffsetsInitializer.latest())
                 .setValueOnlyDeserializer(new SimpleStringSchema())
+                // 若 Flink checkpoint 保存的 offset 超出 Kafka 6 小时留存窗口，自动回退到 latest
+                // 防止 job 重启后读到已过期的 offset 而静默卡死（Bytes=0 但无异常）
+                .setProperty("auto.offset.reset", "latest")
                 .build();
 
         TradeEventDeserializer deserializer = new TradeEventDeserializer();
