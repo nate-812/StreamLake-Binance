@@ -7,8 +7,10 @@ import com.streamlake.common.model.TradeEvent;
 import com.streamlake.common.model.WhaleAlert;
 import org.apache.flink.api.common.eventtime.SerializableTimestampAssigner;
 import org.apache.flink.api.common.eventtime.WatermarkStrategy;
+import org.apache.flink.api.common.functions.FlatMapFunction;
 import org.apache.flink.api.common.functions.OpenContext;
 import org.apache.flink.api.common.serialization.SimpleStringSchema;
+import org.apache.flink.util.Collector;
 import org.apache.flink.cep.CEP;
 import org.apache.flink.cep.PatternSelectFunction;
 import org.apache.flink.cep.PatternStream;
@@ -87,11 +89,29 @@ public class WhaleCepJob {
 
         TradeEventDeserializer deserializer = new TradeEventDeserializer();
 
+        // 用 flatMap 替换原来的 map+filter，将反序列化、null 检查、异常捕获合并为一步。
+        // 原来 map() 遇到坏消息会抛出 RuntimeException → Flink 从 Checkpoint 恢复 → 读到同一个坏消息
+        // → 再次抛出 → 无限重启循环，导致 Timestamps/Watermarks 算子永远 No Data。
+        // 现在：任何解析失败或字段缺失的消息直接 stderr 打印并跳过，不会导致 Task 重启。
         DataStream<TradeEvent> trades = env
                 .fromSource(kafkaSource, WatermarkStrategy.noWatermarks(), "kafka-trade-source")
-                .map(deserializer::deserialize)
+                .flatMap(new FlatMapFunction<String, TradeEvent>() {
+                    @Override
+                    public void flatMap(String json, Collector<TradeEvent> out) {
+                        try {
+                            TradeEvent event = deserializer.deserialize(json);
+                            if (event != null
+                                    && event.getSymbol() != null
+                                    && event.getPrice() != null
+                                    && event.getQty() != null) {
+                                out.collect(event);
+                            }
+                        } catch (Exception e) {
+                            System.err.println("[WhaleCepJob] 跳过无法解析的消息: " + e.getMessage());
+                        }
+                    }
+                })
                 .returns(TradeEvent.class)
-                .filter(t -> t.getSymbol() != null && t.getPrice() != null && t.getQty() != null)
                 .assignTimestampsAndWatermarks(
                         WatermarkStrategy.<TradeEvent>forBoundedOutOfOrderness(Duration.ofSeconds(5))
                                 .withTimestampAssigner(

@@ -1,0 +1,140 @@
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+巨鲸 CEP 作业问题排查记录 & 方法论
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+■ 本次问题根本原因（三次修复全链路）
+
+第一次修复：缺失 assignTimestampsAndWatermarks()
+  - WatermarkStrategy.noWatermarks() 导致事件时间永远停在 -Long.MAX_VALUE
+  - CEP 的 greedy() 等窗口关闭才发射，窗口依赖水位线，永不关闭 → 永不触发
+
+第二次修复：缺失 withIdleness()
+  - 全局水位线 = 所有并行子任务水位线的最小值
+  - Binance 50 个交易对流量极不均匀，分到冷分区的子任务 max_timestamp 不更新
+  - 一个子任务卡死 → 全局水位线卡死 → 加 withIdleness(10s) 解决
+
+第三次修复（本次）：map() 抛出 RuntimeException 导致无限重启循环
+  - deserializer 遇到坏消息抛 RuntimeException
+  - Flink 从 Checkpoint 恢复 → 读到同一个坏消息位点 → 再次抛出 → 无限循环
+  - 直观表现：Timestamps/Watermarks 算子 "No Data"，CepOperator 有字节无记录
+  - 修复：map()+filter() 替换为 flatMap()，catch 所有异常并跳过，不再引发 Task 重启
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Flink 作业排查方法论（下次照着做）
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+■ Step 1：确认数据是否在流动（最先看）
+
+打开 Flink Web UI → 点进问题作业 → Overview 标签页
+看每个算子的 Records Sent / Records Received：
+
+  Source → 下游算子
+  ✓ Source.Records Sent > 0        数据从 Kafka 出来了
+  ✗ Source.Records Sent = 0        Kafka 没数据，查 Step 2
+  ✓ 中间算子 Records Received > 0  数据在流动
+  ✗ 中间算子 Records Received = 0  上游把数据截断了，查 Step 3
+  ✓ CepOperator Records Received > 0  数据进 CEP 了，查 Step 5
+  ✗ CepOperator Bytes > 0 但 Records = 0  只有控制消息，数据被截断，查 Step 3
+
+■ Step 2：Source 没数据 → Kafka 问题
+
+  # 确认 Kafka topic 有新消息
+  /opt/kafka/bin/kafka-consumer-groups.sh \
+    --bootstrap-server 192.168.1.10:9092 \
+    --describe --group flink-cep-group
+  # 看 LAG 列：LAG > 0 说明积压，= 0 说明追上了
+
+  # 如果 offset 乱了，重置到最新
+  /opt/kafka/bin/kafka-consumer-groups.sh \
+    --bootstrap-server 192.168.1.10:9092 \
+    --group flink-cep-group \
+    --topic binance.trade.raw \
+    --reset-offsets --to-latest --execute
+
+  # 注意：重置前必须先取消 Flink 作业
+
+■ Step 3：中间算子 Records = 0 → map/filter 把数据截断
+
+  最常见两种情况：
+  A. 反序列化抛异常（RuntimeException）→ Task 不断重启，Records 看起来总是 0
+     排查：看 TaskManager Logs，搜关键字 "Exception" 或 "Failed to deserialize"
+     路径：Flink UI → Task Manager → Logs 标签
+
+  B. filter 过滤掉所有记录（字段为 null）
+     排查：检查 JSON 字段名是否和 Java 字段名对应
+     Python 发送 event_time（蛇形）vs Java 期望 eventTime（驼峰）这类不匹配
+
+  区分 A 和 B 的方法：
+  - 如果是 A，Flink UI 左上角 Job 状态会不断在 RUNNING / RESTARTING 之间切换
+  - 如果是 B，Job 状态稳定 RUNNING，但 Records 始终 0
+
+■ Step 4：水位线问题 → Timestamps/Watermarks 算子 "No Data"
+
+  四种原因及对应修复：
+  ① 根本没加 assignTimestampsAndWatermarks() → 加上
+  ② 加了但缺 withIdleness() → 某子任务空闲卡死全局水位线 → 加 withIdleness(10s)
+  ③ getEventTime() 返回 0 → 检查 Python 发送的字段名和 Java @JsonProperty 是否匹配
+  ④ 数据本身被截断（Step 3 未解决）→ 先解决 Step 3
+
+  查看当前水位线值：
+  Flink UI → 作业 → 具体算子 → SubTasks 标签 → 看 Watermark 列
+  - 显示 -9223372036854775808（Long.MIN_VALUE）= 从未推进，①②③都可能
+  - 显示 1970-01-01 附近的时间 = getEventTime() 返回 0，是 ③
+  - 显示接近当前时间 = 正常
+
+■ Step 5：数据进了 CEP 但没有结果
+
+  A. 阈值设置问题
+     SELECT * FROM risk_control.whale_thresholds WHERE enabled=1;
+     临时测试：把 BTCUSDT 阈值改成 1（1 USDT），几秒内应该就有数据
+
+  B. greedy() 没触发（水位线没过窗口终点）
+     查看 CepOperator 的 Watermark 值，要比当前时间滞后不超过 65 秒（60s窗口+5s乱序）
+     如果滞后很多 → 重新检查 Step 4
+
+  C. 结果进了 Doris 但查询没数据
+     SELECT COUNT(*) FROM streamlake.whale_alert;
+     如果有数据但 UI 没显示，是展示层问题不是 Flink 问题
+
+■ Step 6：全局快速健康检查命令（每次上线前跑一遍）
+
+  # 1. 看三个作业是否都 RUNNING
+  /opt/flink/bin/flink list
+
+  # 2. 看 Kafka 三个 consumer group 的 LAG
+  for g in flink-kline-group flink-cep-group flink-risk-group; do
+    echo "=== $g ==="
+    /opt/kafka/bin/kafka-consumer-groups.sh \
+      --bootstrap-server 192.168.1.10:9092 \
+      --describe --group $g 2>/dev/null | grep -v "^$"
+  done
+
+  # 3. 看 Doris 各表最近数据时间
+  mysql -h 192.168.1.10 -P 9030 -u root -e "
+    USE streamlake;
+    SELECT 'kline_1min' tbl, MAX(open_time) latest FROM kline_1min
+    UNION ALL
+    SELECT 'whale_alert', MAX(alert_time) FROM whale_alert
+    UNION ALL
+    SELECT 'risk_trigger', MAX(trigger_time) FROM risk_trigger;
+  "
+
+  # 4. 看 TaskManager 日志里有没有 Exception（最近 50 行）
+  tail -50 /opt/flink/log/flink-*-taskexecutor-*.log | grep -i "exception\|error" | tail -20
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+本次修复操作步骤
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+1. 取消当前 WhaleCepJob（在 Flink UI 点 Cancel，或命令行 flink cancel <job-id>）
+2. 重置 consumer group offset（防止从坏消息位点恢复）：
+   /opt/kafka/bin/kafka-consumer-groups.sh \
+     --bootstrap-server 192.168.1.10:9092 \
+     --group flink-cep-group \
+     --topic binance.trade.raw \
+     --reset-offsets --to-latest --execute
+3. 上传新编译的 JAR：job-whale-cep-1.0.0-SNAPSHOT.jar
+4. 重新提交（不带 -s savepoint 参数，让作业从 latest 重新开始）
+5. 等待约 65 秒后查看 Doris：SELECT COUNT(*) FROM streamlake.whale_alert;
