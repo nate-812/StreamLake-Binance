@@ -16,7 +16,7 @@ import org.apache.flink.connector.kafka.source.enumerator.initializer.OffsetsIni
 import org.apache.flink.streaming.api.datastream.BroadcastStream;
 import org.apache.flink.streaming.api.datastream.DataStream;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
-import org.apache.flink.streaming.api.functions.co.KeyedBroadcastProcessFunction;
+import org.apache.flink.streaming.api.functions.co.BroadcastProcessFunction;
 import org.apache.flink.streaming.api.functions.sink.legacy.RichSinkFunction;
 import org.apache.flink.streaming.api.functions.sink.legacy.SinkFunction;
 import org.apache.flink.streaming.api.functions.source.legacy.RichSourceFunction;
@@ -34,13 +34,15 @@ import java.util.UUID;
  *
  * 架构说明：
  *   控制流（MySQL 规则）──► BroadcastStream ──┐
- *                                             ├─► KeyedBroadcastProcessFunction ──► RiskTrigger
- *   数据流（Kafka Trades）── keyBy(symbol) ──┘
+ *                                             ├─► BroadcastProcessFunction ──► RiskTrigger
+ *   数据流（Kafka Trades）── rebalance() ────┘
  *
  * 核心亮点：
  *   1. MySQL risk_rules 表每 30 秒轮询一次，规则变更毫秒级热更新到所有 TaskManager
  *   2. BroadcastState 保证规则在所有并行实例间共享
- *   3. 触发风控后：
+ *   3. 风控判断无状态（每条交易独立对照广播规则），用 rebalance() 替代 keyBy(symbol)，
+ *      将 BTCUSDT 等高频币种均匀打散到所有子任务，彻底消除数据倾斜
+ *   4. 触发风控后：
  *      - 写 Redis 黑名单（TTL=24h）
  *      - 写 Doris risk_trigger 表（用于历史审计）
  *
@@ -99,11 +101,14 @@ public class RiskControlJob {
                 .returns(TradeEvent.class)                                   // 声明数据流类型，防止泛型擦除导致Flink调用低效的序列化器
                 .filter(t -> t.getSymbol() != null && t.getQty() != null);
 
-        // ── 双流 Connect：keyBy(symbol) + Broadcast ───────────────────────
+        // ── 双流 Connect：rebalance() + Broadcast ─────────────────────────
+        // 风控判断是无状态的（每条交易独立对照广播规则，无需聚合历史），
+        // 不需要 keyBy。改用 rebalance() 轮询分发，将 BTCUSDT 等高频币种
+        // 均匀打散到所有子任务，彻底消除数据倾斜。
         DataStream<RiskTrigger> triggers = trades
-                .keyBy(t -> t.getSymbol().toUpperCase(Locale.ROOT))
-                .connect(broadcastRules)                                   // connect 连接数据流和广播流（规则）
-                .process(new RiskControlFunction());                       //
+                .rebalance()
+                .connect(broadcastRules)
+                .process(new RiskControlFunction());
 
         // ── Sink-1：Redis 黑名单（TTL = 24h）─────────────────────────────
         triggers.addSink(new RedisBlacklistSink(redisHost, redisPort))
@@ -172,8 +177,10 @@ public class RiskControlJob {
     }
 
     // ── 核心处理函数：BroadcastState + 风控判断 ───────────────────────────
+    // 改为非键控版本 BroadcastProcessFunction，配合上游 rebalance() 消除数据倾斜。
+    // 风控逻辑本身无需 per-key 状态，只读广播规则表，无需 KeyedBroadcastProcessFunction。
     static class RiskControlFunction
-            extends KeyedBroadcastProcessFunction<String, TradeEvent, RiskRule, RiskTrigger> {
+            extends BroadcastProcessFunction<TradeEvent, RiskRule, RiskTrigger> {
 
         @Override
         public void processElement(TradeEvent trade, ReadOnlyContext ctx, Collector<RiskTrigger> out)

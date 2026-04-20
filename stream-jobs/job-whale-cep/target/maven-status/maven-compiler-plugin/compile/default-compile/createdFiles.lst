@@ -1,4 +1,5 @@
 com/streamlake/cep/WhaleCepJob$1.class
+com/streamlake/cep/WhaleCepJob$2.class
 com/streamlake/cep/WhaleCepJob.class
 com/streamlake/cep/WhaleCepJob$WhalePatternSelectFunction.class
 com/streamlake/cep/WhaleCepJob$DorisWhaleAlertSink.class

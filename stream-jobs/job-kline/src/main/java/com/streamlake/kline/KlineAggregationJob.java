@@ -23,6 +23,7 @@ import org.apache.flink.util.Collector;
 import org.apache.flink.util.OutputTag;
 
 import java.time.Duration;
+import java.util.Set;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -33,6 +34,10 @@ import java.sql.Timestamp;
 import java.util.Locale;
 
 public class KlineAggregationJob {
+
+    // BTC / ETH 交易量远超其他币种，单独走一路以避免 keyBy(symbol) 数据倾斜
+    private static final Set<String> HIGH_VOLUME_SYMBOLS = Set.of("BTCUSDT", "ETHUSDT");
+
     public static void main(String[] args) throws Exception {
         final String kafkaBootstrap = env("KAFKA_BOOTSTRAP", "192.168.1.10:9092");
         final String kafkaTopic = env("KAFKA_TOPIC", "binance.trade.raw");
@@ -80,22 +85,36 @@ public class KlineAggregationJob {
                 // forBoundedOutOfOrderness(Duration.ofSeconds(5))：设置水位线策略为有界无序，允许 5 秒的迟到数据。
                 // withTimestampAssigner(...)：告诉 Flink 谁才是真正的执行时间，使用 event.getEventTime() 这意味着 K 线的时间是根据交易发生时的时间（事件时间）来算的，而不是根据 Flink 收到数据的时间。填补上68行未生成的水位线。
 
-        // 2. 按 symbol 分组，窗口聚合 1 分钟数据
-        SingleOutputStreamOperator<KlineBar> kline1m = trades       
-                .keyBy((KeySelector<TradeEvent, String>) t -> t.getSymbol().toUpperCase(Locale.ROOT))    // 按 symbol 分组，转换为大写，ROOT 是为了避免不同语言环境下大小写转换不一致的问题
-                .window(TumblingEventTimeWindows.of(Duration.ofMinutes(1)))     // 1 分钟滚动窗口
-                .allowedLateness(Duration.ofSeconds(5))     // 允许 5 秒的迟到数据，65s——70s，这部分数据来一条窗口重新计算一次
-                .sideOutputLateData(lateDataTag)            // 将迟到数据输出到侧路输出，标签为 lateDataTag
+        // 2. 拆流：BTC/ETH 高频单独一路，其余 48 个低频共享一路，消除 keyBy(symbol) 数据倾斜
+        //    两路使用完全相同的窗口聚合逻辑，最后 union 合并写入同一个 Sink。
+        DataStream<TradeEvent> highVolTrades = trades.filter(
+                t -> HIGH_VOLUME_SYMBOLS.contains(t.getSymbol().toUpperCase(Locale.ROOT)));
+        DataStream<TradeEvent> lowVolTrades = trades.filter(
+                t -> !HIGH_VOLUME_SYMBOLS.contains(t.getSymbol().toUpperCase(Locale.ROOT)));
+
+        SingleOutputStreamOperator<KlineBar> klineHigh = highVolTrades
+                .keyBy((KeySelector<TradeEvent, String>) t -> t.getSymbol().toUpperCase(Locale.ROOT))
+                .window(TumblingEventTimeWindows.of(Duration.ofMinutes(1)))
+                .allowedLateness(Duration.ofSeconds(5))
+                .sideOutputLateData(lateDataTag)
                 .aggregate(new OhlcvAggregateFunction(), new KlineWindowFunction());
-                //OhlcvAggregateFunction（增量处理）：来一个交易事件，就更新一次 K 线，而不是等窗口结束再更新，这样可以减少内存占用和计算压力。
-                //KlineWindowFunction（窗口处理）：等窗口结束了，才把增量处理函数算好的的 K 线数据（klineBar对象）输出到下游。
 
-        // 3. 写入 Doris 数据库
-        kline1m.addSink(new DorisJdbcUpsertSink(dorisJdbcUrl, dorisUser, dorisPassword, dorisInsertSql))
-                .name("doris-kline-sink");          // 将 KlineBar 数据写入Doris，注意，这一步会调用外部的 DorisJdbcUpsertSink 构造函数，从而将
+        SingleOutputStreamOperator<KlineBar> klineLow = lowVolTrades
+                .keyBy((KeySelector<TradeEvent, String>) t -> t.getSymbol().toUpperCase(Locale.ROOT))
+                .window(TumblingEventTimeWindows.of(Duration.ofMinutes(1)))
+                .allowedLateness(Duration.ofSeconds(5))
+                .sideOutputLateData(lateDataTag)
+                .aggregate(new OhlcvAggregateFunction(), new KlineWindowFunction());
 
-        // 迟到数据先打日志，后续 Phase 3 可接独立侧路 sink
-        kline1m.getSideOutput(lateDataTag).print("late-trade");     //迟到数据先在控制台打印了，看日志判断系统是否正常
+        // 3. 合并两路结果，写入 Doris
+        klineHigh.union(klineLow)
+                .addSink(new DorisJdbcUpsertSink(dorisJdbcUrl, dorisUser, dorisPassword, dorisInsertSql))
+                .name("doris-kline-sink");
+
+        // 迟到数据：两路侧路输出合并打印
+        klineHigh.getSideOutput(lateDataTag)
+                .union(klineLow.getSideOutput(lateDataTag))
+                .print("late-trade");
 
         // 执行 Flink 任务
         env.execute("streamlake-kline-aggregation");

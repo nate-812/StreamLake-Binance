@@ -13,7 +13,6 @@ import org.apache.flink.api.common.serialization.SimpleStringSchema;
 import org.apache.flink.util.Collector;
 import org.apache.flink.cep.CEP;
 import org.apache.flink.cep.PatternSelectFunction;
-import org.apache.flink.cep.PatternStream;
 import org.apache.flink.cep.pattern.Pattern;
 import org.apache.flink.cep.pattern.conditions.SimpleCondition;
 import org.apache.flink.connector.kafka.sink.KafkaRecordSerializationSchema;
@@ -29,6 +28,7 @@ import org.apache.flink.streaming.api.functions.sink.legacy.SinkFunction;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.sql.*;
+import java.util.Set;
 import java.time.Duration;
 import java.util.HashMap;
 import java.util.List;
@@ -53,6 +53,9 @@ import java.util.UUID;
  *   - PatternSelectFunction 保持不变（CEP API 在 2.0 中稳定）
  */
 public class WhaleCepJob {
+
+    // BTC / ETH 交易量远超其他币种，单独走一路以避免 keyBy(symbol) 数据倾斜
+    private static final Set<String> HIGH_VOLUME_SYMBOLS = Set.of("BTCUSDT", "ETHUSDT");
 
     // ── 默认巨鲸阈值（USDT），可被 MySQL 配置覆盖 ──────────────────────
     private static final BigDecimal DEFAULT_THRESHOLD = new BigDecimal("10000");          // 未配置阈值的币种的默认阈值10000，BigDecimal的逻辑是将值原封不动的存进来，必须用字符串赋值，Double值的话会有精度问题
@@ -143,13 +146,25 @@ public class WhaleCepJob {
                 .greedy()         // 贪婪匹配，尽可能多的大单，意思是如果在60秒前就已经有3笔大单了，不直接汇报，继续等更多大单
                 .within(Duration.ofSeconds(60));
 
-        // ── 对每个 symbol 分组后应用 CEP ────────────────────────────────
-        PatternStream<TradeEvent> patternStream = CEP.pattern(
-                trades.keyBy(t -> t.getSymbol().toUpperCase(Locale.ROOT)),
-                whalePattern);
+        // ── 拆流：BTC/ETH 高频单独一路，其余 48 个低频共享一路，消除数据倾斜 ──
+        //    CEP 要求同一 symbol 所有事件必须进同一子任务，无法用加盐方式打散，
+        //    只能在 keyBy 前按交易量分流，让高频 symbol 独享一批子任务资源。
+        DataStream<TradeEvent> highVolTrades = trades.filter(
+                t -> HIGH_VOLUME_SYMBOLS.contains(t.getSymbol().toUpperCase(Locale.ROOT)));
+        DataStream<TradeEvent> lowVolTrades = trades.filter(
+                t -> !HIGH_VOLUME_SYMBOLS.contains(t.getSymbol().toUpperCase(Locale.ROOT)));
 
-        SingleOutputStreamOperator<WhaleAlert> alerts = patternStream.select(
-                new WhalePatternSelectFunction(thresholds));
+        SingleOutputStreamOperator<WhaleAlert> highAlerts = CEP.pattern(
+                highVolTrades.keyBy(t -> t.getSymbol().toUpperCase(Locale.ROOT)),
+                whalePattern)
+                .select(new WhalePatternSelectFunction(thresholds));
+
+        SingleOutputStreamOperator<WhaleAlert> lowAlerts = CEP.pattern(
+                lowVolTrades.keyBy(t -> t.getSymbol().toUpperCase(Locale.ROOT)),
+                whalePattern)
+                .select(new WhalePatternSelectFunction(thresholds));
+
+        DataStream<WhaleAlert> alerts = highAlerts.union(lowAlerts);
 
         // ── Sink-1：Doris JDBC（whale_alert 历史表）──────────────────────
         final String dorisInsertSql =
