@@ -1,0 +1,40 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: streamlake-api-server
+  threads:
+    virtual:
+      enabled: true
+  datasource:
+    url: ${DORIS_JDBC_URL:jdbc:mysql://192.168.1.10:9030/streamlake?useSSL=false}
+    username: ${DORIS_USER:root}
+    password: ${DORIS_PASSWORD:}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    hikari:
+      maximum-pool-size: 20
+      # 本机开发时若连不上 Doris，避免启动阶段长时间卡住（表现为「点了运行没反应」）
+      minimum-idle: 0
+      connection-timeout: 10000
+      # <0：不在启动时强校验连接；首次查库时再建连，失败会有明确 SQL 异常
+      initialization-fail-timeout: -1
+  jackson:
+    serialization:
+      write-dates-as-timestamps: false
+  sql:
+    init:
+      mode: never
+
+ai-engine:
+  base-url: ${AI_ENGINE_BASE_URL:http://192.168.1.10:8000}
+
+realtime:
+  push:
+    interval-ms: ${REALTIME_PUSH_INTERVAL_MS:5000}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus
