@@ -66,4 +66,4 @@ kafka:
   topic_depth: "binance.depth.raw"
   batch_size: 32768
   linger_ms: 50
-  compression_type: "lz4"
+  compression_type: "gzip"
