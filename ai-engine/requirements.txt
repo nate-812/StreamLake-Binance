@@ -1,0 +1,8 @@
+fastapi
+uvicorn[standard]
+pydantic
+httpx
+openai
+pymilvus
+PyMySQL
+langchain
