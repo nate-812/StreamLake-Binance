@@ -8,6 +8,7 @@
 /Users/nate/cursor/StreamLake-Binance/api-server/src/main/java/com/streamlake/controller/RealtimeWSHandler.java
 /Users/nate/cursor/StreamLake-Binance/api-server/src/main/java/com/streamlake/controller/RiskController.java
 /Users/nate/cursor/StreamLake-Binance/api-server/src/main/java/com/streamlake/controller/WhaleController.java
+/Users/nate/cursor/StreamLake-Binance/api-server/src/main/java/com/streamlake/model/DiagnosisRecordView.java
 /Users/nate/cursor/StreamLake-Binance/api-server/src/main/java/com/streamlake/model/DiagnosisRequest.java
 /Users/nate/cursor/StreamLake-Binance/api-server/src/main/java/com/streamlake/model/DiagnosisResponse.java
 /Users/nate/cursor/StreamLake-Binance/api-server/src/main/java/com/streamlake/model/KlineBarView.java
@@ -15,6 +16,7 @@
 /Users/nate/cursor/StreamLake-Binance/api-server/src/main/java/com/streamlake/model/RiskTriggerView.java
 /Users/nate/cursor/StreamLake-Binance/api-server/src/main/java/com/streamlake/model/WhaleAlertView.java
 /Users/nate/cursor/StreamLake-Binance/api-server/src/main/java/com/streamlake/scheduler/RealtimePushScheduler.java
+/Users/nate/cursor/StreamLake-Binance/api-server/src/main/java/com/streamlake/service/DiagnosisHistoryService.java
 /Users/nate/cursor/StreamLake-Binance/api-server/src/main/java/com/streamlake/service/KlineService.java
 /Users/nate/cursor/StreamLake-Binance/api-server/src/main/java/com/streamlake/service/LlmDiagnosisService.java
 /Users/nate/cursor/StreamLake-Binance/api-server/src/main/java/com/streamlake/service/MarketService.java
