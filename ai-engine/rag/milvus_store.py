@@ -40,7 +40,7 @@ def init_collection() -> Collection:
     global _collection
     _connect()
 
-    if not utility.exists_collection(_COLLECTION_NAME):
+    if not utility.has_collection(_COLLECTION_NAME):
         fields = [
             FieldSchema("alert_id",  DataType.VARCHAR,      max_length=64,  is_primary=True, auto_id=False),
             FieldSchema("symbol",    DataType.VARCHAR,      max_length=20),
