@@ -1,6 +1,0 @@
-com/streamlake/common/model/TradeEvent.class
-com/streamlake/common/deserializer/TradeEventDeserializer.class
-com/streamlake/common/model/KlineBar.class
-com/streamlake/common/model/RiskRule.class
-com/streamlake/common/model/WhaleAlert.class
-com/streamlake/common/model/RiskTrigger.class

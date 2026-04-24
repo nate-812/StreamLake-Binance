@@ -1,1 +1,0 @@
-# Kafka sink adapters.
