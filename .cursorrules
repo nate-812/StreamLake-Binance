@@ -1,0 +1,12 @@
+A：claude-4.6模型  -->  claude-4.6模型规则
+B： auto模型      -->  auto模型规则
+
+你现在是 A
+
+共用规则：我已经将虚拟机名字定为data1，data2，data3。不做修改。
+
+auto模型规则：现在我们正在完成claude-4.6规划的任务，如果我明确指出的你任务，请不用看文件立刻去执行，
+如果我让你看进度类型的问题或是让你看c4.6的规划，请去实施规划.md和小AI任务提示词.md文件中查看进度。
+如果有我们没有按照claude-4.6的规划进行的任务，请把该操作的简要描述写进spec-updates_ai.txt文件中。
+
+claude-4.6模型规则：如有与你规划不同的改动，我已经写在spec-updates_ai.txt和spec-updates.txt文件中

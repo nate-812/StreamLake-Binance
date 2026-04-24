@@ -1,0 +1,25 @@
+2026-04-09 与 claude-4.6 规划不一致的近期变更（AI补充）
+
+1) 机器命名与账号差异
+- 实际机器名使用 data1/data2/data3（不使用 master-01/worker-01/worker-02）。
+- 服务器操作账号统一为 root（systemd 示例已改为 User=root）。
+
+2) Phase 2 采集器实现层面的差异
+- 采集器已落地到 collector/ 目录并完成运行验证。
+- TradeEvent 输出字段做了兼容增强：同时保留 eventTime 与 time（同值，毫秒时间戳）。
+- quoteQty 按 price * qty 计算（Decimal），未沿用早期示例里“直接等于 qty”的写法。
+- Kafka 客户端压缩已在新分支恢复并验证成功（compression_type=lz4）。
+- main.py 增加了发送计数与异常日志（trade/depth 每 200 条打印一次，单条发送失败不影响整体连接）。
+
+3) 最近踩坑与结论（注意事项）
+- “Compression library for lz4 not found” 属于 aiokafka 客户端依赖问题；安装 lz4 后已恢复客户端压缩并运行正常。
+- Binance 连通性判断不能依赖 ping（ICMP 可能被限）；应以 websocket 最小收包测试与 curl 9443 连通为准。
+- kafka-console-consumer 出现“0 messages”不代表无数据，需结合：
+  - kafka-get-offsets.sh 看各分区 offset；
+  - 指定 partition + earliest 验证真实数据；
+  - 必要时用新的 group 复核。
+- 当前已验证：trade/depth 两个 topic 均有分区 offset 增长，链路是通的。
+
+4) 后续执行建议（保持与规划对齐）
+- 后续保持客户端压缩时，环境初始化需固定包含 lz4（或对应压缩算法依赖）。
+- 进入 Phase 3 前，先固化 Phase 2 验收证据：10-30 分钟稳定运行日志、offset 增长截图、分区消费样本。

@@ -1,0 +1,14 @@
+[Unit]
+Description=StreamLake Binance Collector
+After=network.target
+
+[Service]
+# 你方服务器统一用 root；若以后改专用账号，把 User 与 venv 路径一并调整即可
+User=root
+WorkingDirectory=/opt/collector
+ExecStart=/opt/collector/.venv/bin/python main.py
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
