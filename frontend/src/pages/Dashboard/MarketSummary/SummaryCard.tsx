@@ -34,6 +34,9 @@ export default function SummaryCard() {
               {' '}{Math.abs(pct).toFixed(2)}%
             </span>
           </div>
+          <div style={{ color: TEXT_SUB, fontSize: 11, marginBottom: 8 }}>
+            右侧为统计指标与实时告警；左侧主图为最近 120 根 K 线
+          </div>
 
           <Row gutter={[8, 8]}>
             <Col span={12}>

@@ -73,9 +73,9 @@ export default function AlertFeed() {
         display: 'flex',
         justifyContent: 'space-between',
       }}>
-        <span>巨鲸告警</span>
+        <span>实时告警（最近）</span>
         {alerts.length > 0 && (
-          <span style={{ color: '#00d09e' }}>{alerts.length} 条</span>
+          <span style={{ color: '#00d09e' }}>{Math.min(alerts.length, 200)} 条</span>
         )}
       </div>
 
@@ -85,7 +85,7 @@ export default function AlertFeed() {
             <Empty description={<span style={{ color: TEXT_SUB }}>暂无告警</span>} />
           </div>
         ) : (
-          alerts.map((a, i) => (
+          alerts.slice(0, 30).map((a, i) => (
             <AlertRow key={a.alertId} alert={a} isNew={i < newCount} />
           ))
         )}

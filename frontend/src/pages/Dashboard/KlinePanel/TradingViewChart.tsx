@@ -73,16 +73,11 @@ export default function TradingViewChart() {
   // ── 全量刷新（切换交易对 or 首次加载）─────────────────────────────────
   useEffect(() => {
     if (!seriesRef.current || klines.length === 0) return
-    seriesRef.current.setData(klines.map(toChartBar))
+    // 首屏看盘以最近 120 根为主，避免蜡烛过密
+    const visible = klines.slice(-120)
+    seriesRef.current.setData(visible.map(toChartBar))
     chartRef.current?.timeScale().fitContent()
-  }, [symbol])                         // symbol 变化时全量更新
-
-  // ── 增量更新（WebSocket 推送最新一根 K 线）────────────────────────────
-  useEffect(() => {
-    if (!seriesRef.current || klines.length === 0) return
-    const last = klines[klines.length - 1]
-    seriesRef.current.update(toChartBar(last))
-  }, [klines])                         // klines 末尾变化时增量更新
+  }, [symbol, klines])                 // symbol 或数据变化时全量更新
 
   return (
     <div style={{ position: 'relative', width: '100%', height: '100%' }}>

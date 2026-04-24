@@ -35,7 +35,7 @@ export default function Dashboard() {
   }, [symbol])
 
   return (
-    <Layout style={{ minHeight: '100vh', background: BG_PAGE }}>
+    <Layout style={{ height: '100vh', background: BG_PAGE, overflow: 'hidden' }}>
       {/* ── 顶部导航栏 ── */}
       <Header style={{
         background: BG_CARD,
@@ -45,6 +45,7 @@ export default function Dashboard() {
         justifyContent: 'space-between',
         padding: '0 24px',
         height: 56,
+        lineHeight: '56px',
       }}>
         <Space align="center">
           <ThunderboltOutlined style={{ color: '#00d09e', fontSize: 20 }} />
@@ -72,23 +73,30 @@ export default function Dashboard() {
       </Header>
 
       {/* ── 主内容区 ── */}
-      <Content style={{ padding: '16px 24px 0', display: 'flex', flexDirection: 'column', gap: 16 }}>
+      <Content style={{
+        height: 'calc(100vh - 56px)',
+        padding: '12px 16px',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 12,
+        overflow: 'hidden',
+      }}>
         {/* 上半区：K线 + 右侧面板 */}
-        <Row gutter={16} style={{ flex: '1 1 0', minHeight: 0 }}>
-          <Col span={16} style={{ display: 'flex', flexDirection: 'column' }}>
+        <Row gutter={12} style={{ flex: '1 1 0', minHeight: 0 }}>
+          <Col span={18} style={{ display: 'flex', flexDirection: 'column' }}>
             <div style={{
               flex: 1,
               background: BG_CARD,
               border: `1px solid ${BORDER}`,
               borderRadius: 8,
               overflow: 'hidden',
-              minHeight: 420,
+              minHeight: 0,
             }}>
               <TradingViewChart />
             </div>
           </Col>
 
-          <Col span={8} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          <Col span={6} style={{ display: 'flex', flexDirection: 'column', gap: 12, minHeight: 0 }}>
             <SummaryCard />
             <div style={{ flex: 1, minHeight: 0 }}>
               <AlertFeed />
@@ -101,7 +109,10 @@ export default function Dashboard() {
           background: BG_CARD,
           border: `1px solid ${BORDER}`,
           borderRadius: 8,
-          padding: 16,
+          padding: 12,
+          height: 170,
+          flexShrink: 0,
+          overflow: 'hidden',
         }}>
           <Heatmap />
         </div>
