@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Layout, Select, Button, Row, Col, Space, Typography } from 'antd'
+import { Layout, Select, Button, Row, Col, Space, Typography, Tabs } from 'antd'
 import { RobotOutlined, ThunderboltOutlined } from '@ant-design/icons'
 import { useMarketStore, SYMBOL_LIST } from '../../store/marketStore'
 import { fetchKlines, fetchAlerts, fetchSummary } from '../../api'
@@ -96,26 +96,45 @@ export default function Dashboard() {
             </div>
           </Col>
 
-          <Col span={6} style={{ display: 'flex', flexDirection: 'column', gap: 12, minHeight: 0 }}>
-            <SummaryCard />
-            <div style={{ flex: 1, minHeight: 0 }}>
-              <AlertFeed />
+          <Col span={6} style={{ minHeight: 0, display: 'flex' }}>
+            <div style={{
+              flex: 1,
+              background: BG_CARD,
+              border: `1px solid ${BORDER}`,
+              borderRadius: 8,
+              overflow: 'hidden',
+              minHeight: 0,
+            }}>
+              <Tabs
+                size="small"
+                defaultActiveKey="summary"
+                style={{ height: '100%' }}
+                tabBarStyle={{
+                  margin: 0,
+                  padding: '0 8px',
+                  borderBottom: `1px solid ${BORDER}`,
+                }}
+                items={[
+                  {
+                    key: 'summary',
+                    label: '概览',
+                    children: <div style={{ padding: 12 }}><SummaryCard /></div>,
+                  },
+                  {
+                    key: 'alerts',
+                    label: '告警',
+                    children: <div style={{ height: '100%', minHeight: 0 }}><AlertFeed /></div>,
+                  },
+                  {
+                    key: 'heatmap',
+                    label: '热力图',
+                    children: <div style={{ padding: 12 }}><Heatmap /></div>,
+                  },
+                ]}
+              />
             </div>
           </Col>
         </Row>
-
-        {/* 下半区：热力图 */}
-        <div style={{
-          background: BG_CARD,
-          border: `1px solid ${BORDER}`,
-          borderRadius: 8,
-          padding: 12,
-          height: 170,
-          flexShrink: 0,
-          overflow: 'hidden',
-        }}>
-          <Heatmap />
-        </div>
       </Content>
 
       <DiagnosisDrawer open={drawerOpen} onClose={() => setDrawerOpen(false)} />

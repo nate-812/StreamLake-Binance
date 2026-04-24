@@ -12,6 +12,12 @@ function toChartBar(k: KlineBar): CandlestickData {
   }
 }
 
+function dedupeByOpenTimeAsc(bars: KlineBar[]): KlineBar[] {
+  const map = new Map<string, KlineBar>()
+  for (const b of bars) map.set(b.openTime, b)
+  return [...map.values()].sort((a, b) => +new Date(a.openTime) - +new Date(b.openTime))
+}
+
 export default function TradingViewChart() {
   const containerRef = useRef<HTMLDivElement>(null)
   const chartRef     = useRef<IChartApi | null>(null)
@@ -73,8 +79,9 @@ export default function TradingViewChart() {
   // ── 全量刷新（切换交易对 or 首次加载）─────────────────────────────────
   useEffect(() => {
     if (!seriesRef.current || klines.length === 0) return
-    // 首屏看盘以最近 120 根为主，避免蜡烛过密
-    const visible = klines.slice(-120)
+    // 去重并仅展示最近 120 根，避免时间重复导致竖线/图形异常
+    const visible = dedupeByOpenTimeAsc(klines).slice(-120)
+    if (visible.length === 0) return
     seriesRef.current.setData(visible.map(toChartBar))
     chartRef.current?.timeScale().fitContent()
   }, [symbol, klines])                 // symbol 或数据变化时全量更新
