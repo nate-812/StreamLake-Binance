@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo, ReactNode } from 'react'
+import { useEffect, useState, useMemo, useRef, ReactNode } from 'react'
 import { Layout, Select, Button } from 'antd'
 import { RobotOutlined, ThunderboltOutlined, ArrowUpOutlined, ArrowDownOutlined } from '@ant-design/icons'
 import { useMarketStore, SYMBOL_LIST } from '../../store/marketStore'
@@ -124,9 +124,13 @@ function PanelTabs({
 
 export default function Dashboard() {
   const { symbol, setSymbol, setKlines, prependAlerts, setSummary } = useMarketStore()
-  const summary = useMarketStore((s) => s.summary)
-  const klines  = useMarketStore((s) => s.klines)
+  const summary     = useMarketStore((s) => s.summary)
+  const klines      = useMarketStore((s) => s.klines)
+  const wsConnected = useMarketStore((s) => s.wsConnected)
   const [drawerOpen, setDrawerOpen] = useState(false)
+  const [pricePulse, setPricePulse] = useState<'up' | 'down' | null>(null)
+  const prevPriceRef  = useRef<number | null>(null)
+  const pulseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   useRealtimeWS()
 
@@ -139,9 +143,26 @@ export default function Dashboard() {
   useEffect(() => {
     const id = window.setInterval(() => {
       fetchSummary(symbol).then(setSummary).catch(() => null)
-    }, 30_000)
+    }, 5_000)
     return () => window.clearInterval(id)
   }, [symbol])
+
+  // 价格呼吸灯：优先监听 klines 最新收盘（WS 实时更新），
+  // WS 断线时回退到 summary.lastPrice（REST 每 5s 轮询）
+  const latestPrice = klines.length > 0
+    ? Number(klines[klines.length - 1].close)
+    : Number(summary?.lastPrice ?? 0)
+
+  useEffect(() => {
+    if (!latestPrice) return
+    const prev = prevPriceRef.current
+    prevPriceRef.current = latestPrice
+    if (prev === null || latestPrice === prev) return
+
+    if (pulseTimerRef.current) clearTimeout(pulseTimerRef.current)
+    setPricePulse(latestPrice > prev ? 'up' : 'down')
+    pulseTimerRef.current = setTimeout(() => setPricePulse(null), 900)
+  }, [latestPrice])
 
   // 近 24h 最高/最低（取最近 1440 根 1m K 线近似）
   const { h24, l24 } = useMemo(() => {
@@ -203,6 +224,35 @@ export default function Dashboard() {
 
         {/* Live Price */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexShrink: 0 }}>
+          {/* 呼吸灯 */}
+          <div style={{ position: 'relative', width: 10, height: 10, flexShrink: 0 }}>
+            {/* 外圈扩散光晕 */}
+            <div style={{
+              position:     'absolute',
+              inset:        pricePulse ? -4 : 0,
+              borderRadius: '50%',
+              background:   'transparent',
+              border:       `1.5px solid ${pricePulse === 'up' ? UP_COLOR : pricePulse === 'down' ? DOWN_COLOR : 'transparent'}`,
+              opacity:      pricePulse ? 0.35 : 0,
+              transition:   'all 0.25s ease',
+            }} />
+            {/* 核心圆点 */}
+            <div style={{
+              position:     'absolute',
+              inset:        pricePulse ? 0 : 1.5,
+              borderRadius: '50%',
+              background:   pricePulse === 'up'
+                ? UP_COLOR
+                : pricePulse === 'down'
+                ? DOWN_COLOR
+                : `${TEXT_SUB}50`,
+              boxShadow:    pricePulse
+                ? `0 0 8px 2px ${pricePulse === 'up' ? UP_COLOR : DOWN_COLOR}88`
+                : 'none',
+              transition:   'all 0.2s ease',
+            }} />
+          </div>
+
           <span
             style={{
               fontSize: 22,
@@ -213,7 +263,7 @@ export default function Dashboard() {
               lineHeight: 1,
             }}
           >
-            {fmtPrice(summary?.lastPrice)}
+            {fmtPrice(latestPrice || summary?.lastPrice)}
           </span>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
             <span style={{ fontSize: 12, fontWeight: 600, color: priceColor, lineHeight: 1 }}>
@@ -262,6 +312,48 @@ export default function Dashboard() {
               color={DOWN_COLOR}
             />
           )}
+        </div>
+
+        {/* WS 连接状态指示灯 */}
+        <div
+          title={wsConnected ? 'WebSocket 已连接 · 实时推送中' : 'WebSocket 未连接 · REST 轮询模式'}
+          style={{
+            display:      'flex',
+            alignItems:   'center',
+            gap:          6,
+            padding:      '4px 10px',
+            borderRadius: 4,
+            border:       `1px solid ${wsConnected ? `${UP_COLOR}40` : `${TEXT_SUB}25`}`,
+            background:   wsConnected ? `${UP_COLOR}0C` : 'transparent',
+            flexShrink:   0,
+            cursor:       'default',
+            marginRight:  8,
+          }}
+        >
+          {/* 状态点 */}
+          <div style={{ position: 'relative', width: 7, height: 7, flexShrink: 0 }}>
+            <div style={{
+              position:     'absolute',
+              inset:        0,
+              borderRadius: '50%',
+              background:   wsConnected ? UP_COLOR : `${TEXT_SUB}55`,
+              boxShadow:    wsConnected ? `0 0 6px ${UP_COLOR}` : 'none',
+            }} />
+            {/* 连接时外圈脉冲 */}
+            {wsConnected && (
+              <div style={{
+                position:     'absolute',
+                inset:        -3,
+                borderRadius: '50%',
+                border:       `1px solid ${UP_COLOR}50`,
+                animation:    'none',
+                opacity:      0.6,
+              }} />
+            )}
+          </div>
+          <span style={{ fontSize: 11, color: wsConnected ? UP_COLOR : TEXT_SUB, lineHeight: 1 }}>
+            {wsConnected ? '实时' : '轮询'}
+          </span>
         </div>
 
         {/* AI Diagnosis Button */}

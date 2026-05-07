@@ -3,10 +3,11 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "vite",
+    "dev":           "VITE_ENABLE_WS=1 vite --host 0.0.0.0",
+    "dev:no-ws":     "vite --host 0.0.0.0",
     "dev:local-api": "VITE_API_TARGET=http://127.0.0.1:8080 vite --host 0.0.0.0",
-    "build": "tsc && vite build",
-    "preview": "vite preview"
+    "build":         "tsc && vite build",
+    "preview":       "vite preview"
   },
   "dependencies": {
     "react": "^19.0.0",

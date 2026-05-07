@@ -55,10 +55,10 @@ public class RealtimePushScheduler {
     }
 
     /**
-     * 每 10s 推送活跃交易对的最新 K 线（全量快照，前端直接刷新最新一根蜡烛图）。
+     * 每 2s 推送活跃交易对的最新 K 线（全量快照，前端直接刷新最新一根蜡烛图）。
      * 活跃交易对定义：近 2 分钟内 kline_1min 有记录的 symbol，最多取 20 个。
      */
-    @Scheduled(fixedDelay = 10_000)
+    @Scheduled(fixedDelay = 2_000)
     public void pushLatestKlines() {
         List<String> activeSymbols;
         try {

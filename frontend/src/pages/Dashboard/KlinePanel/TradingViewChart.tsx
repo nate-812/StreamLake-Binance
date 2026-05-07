@@ -108,6 +108,20 @@ function fmtVol(n: number): string {
   return n.toFixed(2)
 }
 
+// 计算末尾连续阳线/阴线数（≥2 才返回）
+function computeStreak(bars: KlineBar[]): { dir: 'up' | 'down'; count: number } | null {
+  if (bars.length < 2) return null
+  const last = bars[bars.length - 1]
+  const dir  = Number(last.close) >= Number(last.open) ? 'up' : 'down'
+  let count  = 1
+  for (let i = bars.length - 2; i >= 0; i--) {
+    const isUp = Number(bars[i].close) >= Number(bars[i].open)
+    if ((dir === 'up') === isUp) count++
+    else break
+  }
+  return count >= 2 ? { dir, count } : null
+}
+
 // ── Component ──────────────────────────────────────────────────────────────
 
 interface InfoBar {
@@ -129,6 +143,7 @@ export default function TradingViewChart() {
   const visibleRef   = useRef<KlineBar[]>([])
 
   const [infoBar, setInfoBar] = useState<InfoBar | null>(null)
+  const [streak,  setStreak]  = useState<{ dir: 'up' | 'down'; count: number } | null>(null)
 
   const klines           = useMarketStore((s) => s.klines)
   const symbol           = useMarketStore((s) => s.symbol)
@@ -240,6 +255,7 @@ export default function TradingViewChart() {
       c.setData([]); v.setData([])
       ms.forEach((m) => m.setData([]))
       setInfoBar(null)
+      setStreak(null)
       return
     }
 
@@ -270,6 +286,7 @@ export default function TradingViewChart() {
       })
     }
 
+    setStreak(computeStreak(visible))
     chartRef.current?.timeScale().fitContent()
   }, [symbol, interval, klines])
 
@@ -328,6 +345,39 @@ export default function TradingViewChart() {
             <span style={{ fontSize: 11, color, lineHeight: 1 }}>{label}</span>
           </span>
         ))}
+
+        {/* Streak badge */}
+        {streak && (
+          <div
+            style={{
+              display:      'flex',
+              alignItems:   'center',
+              gap:          5,
+              padding:      '2px 9px',
+              borderRadius: 4,
+              background:   streak.dir === 'up' ? `${UP_COLOR}14` : `${DOWN_COLOR}14`,
+              border:       `1px solid ${streak.dir === 'up' ? UP_COLOR : DOWN_COLOR}30`,
+              marginLeft:   8,
+              flexShrink:   0,
+            }}
+          >
+            <span style={{
+              fontSize:   13,
+              color:      streak.dir === 'up' ? UP_COLOR : DOWN_COLOR,
+              lineHeight: 1,
+            }}>
+              {streak.dir === 'up' ? '↑' : '↓'}
+            </span>
+            <span style={{
+              fontSize:   11,
+              fontWeight: 600,
+              color:      streak.dir === 'up' ? UP_COLOR : DOWN_COLOR,
+              lineHeight: 1,
+            }}>
+              连{streak.dir === 'up' ? '阳' : '阴'}&nbsp;{streak.count}
+            </span>
+          </div>
+        )}
 
         {/* OHLC Info + Symbol (right-aligned) */}
         <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 14, flexShrink: 0 }}>

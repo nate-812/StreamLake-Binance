@@ -42,6 +42,7 @@ interface MarketState {
   klines:      KlineBar[]
   alerts:      WhaleAlert[]
   summary:     MarketSummary | null
+  wsConnected: boolean
 
   setSymbol:         (s: string) => void
   setInterval:       (i: ChartInterval) => void
@@ -49,14 +50,16 @@ interface MarketState {
   prependAlerts:     (items: WhaleAlert[]) => void
   setSummary:        (s: MarketSummary) => void
   updateLatestKline: (bar: KlineBar) => void
+  setWsConnected:    (v: boolean) => void
 }
 
 export const useMarketStore = create<MarketState>((set) => ({
-  symbol:   'BTCUSDT',
-  interval: '5m',
-  klines:   [],
-  alerts:   [],
-  summary:  null,
+  symbol:      'BTCUSDT',
+  interval:    '5m',
+  klines:      [],
+  alerts:      [],
+  summary:     null,
+  wsConnected: false,
 
   setSymbol:  (symbol) => set({ symbol, klines: [], alerts: [], summary: null }),
   setInterval: (interval) => set({ interval }),
@@ -68,6 +71,8 @@ export const useMarketStore = create<MarketState>((set) => ({
     set((s) => ({ alerts: [...items, ...s.alerts].slice(0, 200) })),
 
   setSummary: (summary) => set({ summary }),
+
+  setWsConnected: (wsConnected) => set({ wsConnected }),
 
   updateLatestKline: (bar) =>
     set((s) => {
