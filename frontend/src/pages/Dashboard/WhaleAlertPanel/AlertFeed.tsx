@@ -310,12 +310,14 @@ export default function AlertFeed() {
     if (n > 0) setFlashN(n)
   }, [alerts])
 
-  // Compute buy/sell pressure from recent alerts
-  const recent   = alerts.slice(0, 100)
-  const buyCount  = recent.filter((a) => a.direction === 'BUY').length
-  const sellCount = recent.filter((a) => a.direction === 'SELL').length
-  const total     = buyCount + sellCount
-  const buyRatio  = total > 0 ? buyCount / total : 0.5
+  // 按金额加权计算买卖压力（一笔 $500k 买单不能和一笔 $50k 等权）
+  const recent     = alerts.slice(0, 100)
+  const buyCount   = recent.filter((a) => a.direction === 'BUY').length
+  const sellCount  = recent.filter((a) => a.direction === 'SELL').length
+  const buyVolume  = recent.filter((a) => a.direction === 'BUY' ).reduce((s, a) => s + Number(a.totalQuote), 0)
+  const sellVolume = recent.filter((a) => a.direction === 'SELL').reduce((s, a) => s + Number(a.totalQuote), 0)
+  const totalVolume = buyVolume + sellVolume
+  const buyRatio   = totalVolume > 0 ? buyVolume / totalVolume : 0.5
 
   const hasAlerts = alerts.length > 0
 

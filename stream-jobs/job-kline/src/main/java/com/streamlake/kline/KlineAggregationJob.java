@@ -18,6 +18,8 @@ import org.apache.flink.streaming.api.functions.sink.legacy.RichSinkFunction;
 import org.apache.flink.streaming.api.functions.sink.legacy.SinkFunction;
 import org.apache.flink.streaming.api.functions.windowing.ProcessWindowFunction;
 import org.apache.flink.streaming.api.windowing.assigners.TumblingEventTimeWindows;
+import org.apache.flink.streaming.api.windowing.triggers.Trigger;
+import org.apache.flink.streaming.api.windowing.triggers.TriggerResult;
 import org.apache.flink.streaming.api.windowing.windows.TimeWindow;
 import org.apache.flink.util.Collector;
 import org.apache.flink.util.OutputTag;
@@ -95,6 +97,7 @@ public class KlineAggregationJob {
         SingleOutputStreamOperator<KlineBar> klineHigh = highVolTrades
                 .keyBy((KeySelector<TradeEvent, String>) t -> t.getSymbol().toUpperCase(Locale.ROOT))
                 .window(TumblingEventTimeWindows.of(Duration.ofMinutes(1)))
+                .trigger(new PeriodicAndFinalTrigger())
                 .allowedLateness(Duration.ofSeconds(5))
                 .sideOutputLateData(lateDataTag)
                 .aggregate(new OhlcvAggregateFunction(), new KlineWindowFunction());
@@ -102,6 +105,7 @@ public class KlineAggregationJob {
         SingleOutputStreamOperator<KlineBar> klineLow = lowVolTrades
                 .keyBy((KeySelector<TradeEvent, String>) t -> t.getSymbol().toUpperCase(Locale.ROOT))
                 .window(TumblingEventTimeWindows.of(Duration.ofMinutes(1)))
+                .trigger(new PeriodicAndFinalTrigger())
                 .allowedLateness(Duration.ofSeconds(5))
                 .sideOutputLateData(lateDataTag)
                 .aggregate(new OhlcvAggregateFunction(), new KlineWindowFunction());
@@ -254,7 +258,7 @@ public class KlineAggregationJob {
     static class KlineWindowFunction extends ProcessWindowFunction<OhlcvAccumulator, KlineBar, String, TimeWindow> {
         @Override
         public void process(String key, Context context, Iterable<OhlcvAccumulator> elements, Collector<KlineBar> out) {
-            OhlcvAccumulator acc = elements.iterator().next();              //原本这是个可迭代对象，但增量处理已经算好数据 acc对象，所以.next() 取唯一对象。
+            OhlcvAccumulator acc = elements.iterator().next();
             KlineBar bar = new KlineBar();
             bar.setSymbol(key);
             bar.setOpenTime(new Timestamp(context.window().getStart()));
@@ -264,13 +268,55 @@ public class KlineAggregationJob {
             bar.setClose(scale(acc.close));
             bar.setVolume(scale(acc.volume));
             bar.setQuoteVolume(scale(acc.quoteVolume));
-            bar.setTradeCount(acc.tradeCount);                        // 加上时间戳，并给数据整容
-            bar.setClosed(true);                                      // 设置为true，表示这个 K 线已经收盘，不会再变了。
+            bar.setTradeCount(acc.tradeCount);
+            // 水位线已越过窗口末尾 → 窗口已关闭，标记为 closed
+            boolean isClosed = context.currentWatermark() >= context.window().maxTimestamp();
+            bar.setClosed(isClosed);
             out.collect(bar);
         }
 
         private BigDecimal scale(BigDecimal val) {
             return val.setScale(8, RoundingMode.HALF_UP);
-        }                                                           //增量处理为了保持精度有很多小数，这里统一设置小数位为8位，四舍五入。
+        }
+    }
+
+    /**
+     * 自定义 Trigger：
+     *   - 每 2 秒触发一次中间结果（FIRE，不清除累加器）→ is_closed=0
+     *   - 水位线到达窗口末尾时触发最终结果（FIRE，保留 allowedLateness 语义）→ is_closed=1
+     * Doris UNIQUE KEY MoW 保证同 (symbol, open_time) 后写覆盖前写。
+     */
+    static class PeriodicAndFinalTrigger extends Trigger<Object, TimeWindow> {
+        private static final long INTERVAL_MS = 2_000L;
+
+        @Override
+        public TriggerResult onElement(Object element, long timestamp, TimeWindow window, TriggerContext ctx)
+                throws Exception {
+            // 注册窗口关闭的事件时间 timer
+            ctx.registerEventTimeTimer(window.maxTimestamp());
+            // 注册下一次 2s 处理时间 timer
+            ctx.registerProcessingTimeTimer(ctx.getCurrentProcessingTime() + INTERVAL_MS);
+            return TriggerResult.CONTINUE;
+        }
+
+        @Override
+        public TriggerResult onProcessingTime(long time, TimeWindow window, TriggerContext ctx) throws Exception {
+            // 继续注册下一个 2s timer，形成周期性触发
+            ctx.registerProcessingTimeTimer(time + INTERVAL_MS);
+            return TriggerResult.FIRE;          // 发出中间结果，累加器保留
+        }
+
+        @Override
+        public TriggerResult onEventTime(long time, TimeWindow window, TriggerContext ctx) throws Exception {
+            if (time == window.maxTimestamp()) {
+                return TriggerResult.FIRE;      // 发出最终结果，由 allowedLateness 控制清理时机
+            }
+            return TriggerResult.CONTINUE;
+        }
+
+        @Override
+        public void clear(TimeWindow window, TriggerContext ctx) throws Exception {
+            ctx.deleteEventTimeTimer(window.maxTimestamp());
+        }
     }
 }

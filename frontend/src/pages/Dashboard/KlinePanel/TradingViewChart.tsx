@@ -13,14 +13,14 @@ import { UP_COLOR, DOWN_COLOR, BORDER, TEXT_SUB, TEXT_MAIN, ACCENT, BG_PAGE } fr
 
 // ── Constants ──────────────────────────────────────────────────────────────
 
-const INTERVALS: ChartInterval[] = ['1m', '3m', '5m', '15m', '1h']
+const INTERVALS: ChartInterval[] = ['1m', '3m', '5m', '15m', '30m', '1h', '4h']
 
 const INTERVAL_MINUTES: Record<ChartInterval, number> = {
-  '1m': 1, '3m': 3, '5m': 5, '15m': 15, '1h': 60,
+  '1m': 1, '3m': 3, '5m': 5, '15m': 15, '30m': 30, '1h': 60, '4h': 240,
 }
 
 const VISIBLE_COUNT: Record<ChartInterval, number> = {
-  '1m': 240, '3m': 220, '5m': 200, '15m': 180, '1h': 120,
+  '1m': 240, '3m': 220, '5m': 200, '15m': 180, '30m': 150, '1h': 120, '4h': 80,
 }
 
 // MA line colors
@@ -102,6 +102,26 @@ function aggregateBars(bars: KlineBar[], intervalMinutes: number): KlineBar[] {
     })
 }
 
+// 根据价格量级自动选合适精度，避免 BTC 显示 $104321.00 而 SHIB 全是 0
+function getPriceFormat(price: number): { precision: number; minMove: number } {
+  if (price >= 1000) return { precision: 2, minMove: 0.01 }
+  if (price >= 10)   return { precision: 3, minMove: 0.001 }
+  if (price >= 1)    return { precision: 4, minMove: 0.0001 }
+  return             { precision: 6, minMove: 0.000001 }
+}
+
+// 只计算最后一个 MA 点，O(period) 而非 O(n)，用于 WS 增量更新
+function buildMALastPoint(bars: KlineBar[], period: number): LineData<Time> | null {
+  if (bars.length < period) return null
+  const slice = bars.slice(-period)
+  const sum   = slice.reduce((acc, b) => acc + Number(b.close), 0)
+  const last  = bars[bars.length - 1]
+  return {
+    time:  Math.floor(new Date(last.openTime).getTime() / 1000) as Time,
+    value: sum / period,
+  }
+}
+
 function fmtVol(n: number): string {
   if (n >= 1e6) return (n / 1e6).toFixed(2) + 'M'
   if (n >= 1e3) return (n / 1e3).toFixed(1) + 'K'
@@ -144,6 +164,9 @@ export default function TradingViewChart() {
 
   const [infoBar, setInfoBar] = useState<InfoBar | null>(null)
   const [streak,  setStreak]  = useState<{ dir: 'up' | 'down'; count: number } | null>(null)
+
+  // 记录上次全量刷新的 key，WS 推送时做增量 update
+  const prevKeyRef = useRef('')
 
   const klines           = useMarketStore((s) => s.klines)
   const symbol           = useMarketStore((s) => s.symbol)
@@ -252,12 +275,16 @@ export default function TradingViewChart() {
 
     if (klines.length === 0) {
       visibleRef.current = []
+      prevKeyRef.current = ''
       c.setData([]); v.setData([])
       ms.forEach((m) => m.setData([]))
       setInfoBar(null)
       setStreak(null)
       return
     }
+
+    const key        = `${symbol}:${interval}`
+    const isFullLoad = prevKeyRef.current !== key
 
     const base       = dedupeAsc(klines)
     const step       = INTERVAL_MINUTES[interval]
@@ -267,27 +294,44 @@ export default function TradingViewChart() {
     if (visible.length === 0) return
 
     visibleRef.current = visible
-    c.setData(visible.map(toChartBar))
-    v.setData(visible.map(toVolumeBar))
-    ms.forEach((m, i) => m.setData(buildMA(visible, MA_CONFIG[i].period)))
-
     const last = visible[visible.length - 1]
-    if (last) {
-      const prev      = visible.length > 1 ? Number(visible[visible.length - 2].close) : null
-      const changePct = prev ? ((Number(last.close) - prev) / prev) * 100 : null
-      setInfoBar({
-        timeText:  last.openTime.slice(0, 16).replace('T', ' '),
-        open:      Number(last.open),
-        high:      Number(last.high),
-        low:       Number(last.low),
-        close:     Number(last.close),
-        volume:    Number(last.volume),
-        changePct,
+
+    if (isFullLoad) {
+      // 换币种 / 换周期：全量重绘 + 自适应精度 + fitContent
+      prevKeyRef.current = key
+      const fmt = getPriceFormat(Number(last.close))
+      c.applyOptions({ priceFormat: { type: 'price', ...fmt } })
+      c.setData(visible.map(toChartBar))
+      v.setData(visible.map(toVolumeBar))
+      ms.forEach((m, i) => m.setData(buildMA(visible, MA_CONFIG[i].period)))
+      chartRef.current?.timeScale().fitContent()
+      setStreak(computeStreak(visible))
+    } else {
+      // WS 推送最新 K 线：只更新末尾一根，O(1) 开销
+      c.update(toChartBar(last))
+      v.update(toVolumeBar(last))
+      MA_CONFIG.forEach((cfg, i) => {
+        const pt = buildMALastPoint(visible, cfg.period)
+        if (pt) ms[i].update(pt)
       })
+      // 连续性判断只在条数有变化时重算（避免每 2s 全遍历）
+      if (visible.length !== (visibleRef.current?.length ?? 0)) {
+        setStreak(computeStreak(visible))
+      }
     }
 
-    setStreak(computeStreak(visible))
-    chartRef.current?.timeScale().fitContent()
+    // infoBar 始终跟随最新 K 线（悬停时由 crosshairMove 覆盖）
+    const prev      = visible.length > 1 ? Number(visible[visible.length - 2].close) : null
+    const changePct = prev ? ((Number(last.close) - prev) / prev) * 100 : null
+    setInfoBar({
+      timeText:  last.openTime.slice(0, 16).replace('T', ' '),
+      open:      Number(last.open),
+      high:      Number(last.high),
+      low:       Number(last.low),
+      close:     Number(last.close),
+      volume:    Number(last.volume),
+      changePct,
+    })
   }, [symbol, interval, klines])
 
   // ── Render ───────────────────────────────────────────────────────────────
