@@ -135,7 +135,7 @@ export default function Dashboard() {
   useRealtimeWS()
 
   useEffect(() => {
-    fetchKlines(symbol, 3000).then(setKlines).catch(console.error)
+    fetchKlines(symbol, 7200).then(setKlines).catch(console.error)
     fetchAlerts(symbol).then(prependAlerts).catch(console.error)
     fetchSummary(symbol).then(setSummary).catch(console.error)
   }, [symbol])

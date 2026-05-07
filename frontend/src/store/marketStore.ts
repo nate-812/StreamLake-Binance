@@ -82,7 +82,7 @@ export const useMarketStore = create<MarketState>((set) => ({
         list[list.length - 1] = bar
       } else {
         list.push(bar)
-        if (list.length > 3500) list.shift()
+        if (list.length > 8000) list.shift()
       }
       return { klines: list }
     }),
