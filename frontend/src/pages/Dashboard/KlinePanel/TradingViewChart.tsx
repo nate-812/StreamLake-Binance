@@ -283,21 +283,26 @@ export default function TradingViewChart() {
       return
     }
 
-    const key        = `${symbol}:${interval}`
-    const isFullLoad = prevKeyRef.current !== key
-
-    const base       = dedupeAsc(klines)
-    const step       = INTERVAL_MINUTES[interval]
-    const normalized = aggregateBars(base, step)
-    const count      = VISIBLE_COUNT[interval]
-    const visible    = normalized.slice(-count)
+    const key         = `${symbol}:${interval}`
+    const base        = dedupeAsc(klines)
+    const step        = INTERVAL_MINUTES[interval]
+    const normalized  = aggregateBars(base, step)
+    const count       = VISIBLE_COUNT[interval]
+    const visible     = normalized.slice(-count)
     if (visible.length === 0) return
 
+    // prevVisible 必须在更新 visibleRef 之前读取
+    const prevVisible = visibleRef.current
     visibleRef.current = visible
     const last = visible[visible.length - 1]
 
+    // 全量刷新条件：
+    //   1. symbol/interval 切换（key 不匹配），OR
+    //   2. 数据量远多于上次（说明 REST API 历史数据刚到，WS 只推了 1-2 根就先占了坑）
+    const isFullLoad = prevKeyRef.current !== key || visible.length > prevVisible.length + 10
+
     if (isFullLoad) {
-      // 换币种 / 换周期：全量重绘 + 自适应精度 + fitContent
+      // 换币种 / 换周期 / 历史数据首次到齐：全量重绘 + 自适应精度 + fitContent
       prevKeyRef.current = key
       const fmt = getPriceFormat(Number(last.close))
       c.applyOptions({ priceFormat: { type: 'price', ...fmt } })
@@ -314,8 +319,8 @@ export default function TradingViewChart() {
         const pt = buildMALastPoint(visible, cfg.period)
         if (pt) ms[i].update(pt)
       })
-      // 连续性判断只在条数有变化时重算（避免每 2s 全遍历）
-      if (visible.length !== (visibleRef.current?.length ?? 0)) {
+      // 连续性判断只在条数有变化时重算
+      if (visible.length !== prevVisible.length) {
         setStreak(computeStreak(visible))
       }
     }
