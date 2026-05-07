@@ -3,24 +3,25 @@ import { ThemeConfig, theme } from 'antd'
 export const darkTheme: ThemeConfig = {
   algorithm: theme.darkAlgorithm,
   token: {
-    colorBgBase:        '#0d1117',
-    colorBgContainer:   '#161b22',
-    colorBgElevated:    '#1c2128',
-    colorBorder:        '#30363d',
-    colorText:          '#e6edf3',
-    colorTextSecondary: '#8b949e',
-    colorPrimary:       '#00d09e',
-    colorError:         '#ef5350',
-    colorSuccess:       '#00d09e',
-    borderRadius:       8,
+    colorBgBase:        '#0B0E11',
+    colorBgContainer:   '#1E2026',
+    colorBgElevated:    '#2B3139',
+    colorBorder:        '#2B3139',
+    colorText:          '#EAECEF',
+    colorTextSecondary: '#848E9C',
+    colorPrimary:       '#F0B90B',
+    colorError:         '#F6465D',
+    colorSuccess:       '#0ECB81',
+    borderRadius:       4,
+    fontFamily:         `-apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', sans-serif`,
   },
 }
 
-// 语义色（不依赖 Ant Design Token）
-export const UP_COLOR   = '#00d09e'
-export const DOWN_COLOR = '#ef5350'
-export const BG_CARD    = '#161b22'
-export const BG_PAGE    = '#0d1117'
-export const BORDER     = '#30363d'
-export const TEXT_MAIN  = '#e6edf3'
-export const TEXT_SUB   = '#8b949e'
+export const UP_COLOR   = '#0ECB81'
+export const DOWN_COLOR = '#F6465D'
+export const BG_CARD    = '#1E2026'
+export const BG_PAGE    = '#0B0E11'
+export const BORDER     = '#2B3139'
+export const TEXT_MAIN  = '#EAECEF'
+export const TEXT_SUB   = '#848E9C'
+export const ACCENT     = '#F0B90B'

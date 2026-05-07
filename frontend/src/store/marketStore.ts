@@ -34,28 +34,34 @@ export interface MarketSummary {
   riskTriggerCount24h: number
 }
 
+export type ChartInterval = '1m' | '3m' | '5m' | '15m' | '1h'
+
 interface MarketState {
   symbol:      string
+  interval:    ChartInterval
   klines:      KlineBar[]
   alerts:      WhaleAlert[]
   summary:     MarketSummary | null
 
   setSymbol:         (s: string) => void
-  setKlines:         (bars: KlineBar[]) => void      // 传入 DESC 数组，内部转 ASC
+  setInterval:       (i: ChartInterval) => void
+  setKlines:         (bars: KlineBar[]) => void
   prependAlerts:     (items: WhaleAlert[]) => void
   setSummary:        (s: MarketSummary) => void
   updateLatestKline: (bar: KlineBar) => void
 }
 
 export const useMarketStore = create<MarketState>((set) => ({
-  symbol:  'BTCUSDT',
-  klines:  [],
-  alerts:  [],
-  summary: null,
+  symbol:   'BTCUSDT',
+  interval: '5m',
+  klines:   [],
+  alerts:   [],
+  summary:  null,
 
-  setSymbol: (symbol) => set({ symbol, klines: [], alerts: [], summary: null }),
+  setSymbol:  (symbol) => set({ symbol, klines: [], alerts: [], summary: null }),
+  setInterval: (interval) => set({ interval }),
 
-  // API 返回 DESC，存储 ASC（图表直接使用）
+  // API 返回 DESC，存储转 ASC
   setKlines: (bars) => set({ klines: [...bars].reverse() }),
 
   prependAlerts: (items) =>
@@ -68,10 +74,10 @@ export const useMarketStore = create<MarketState>((set) => ({
       const list = [...s.klines]
       const last = list[list.length - 1]
       if (last && last.openTime === bar.openTime) {
-        list[list.length - 1] = bar          // 更新当前未闭合 K 线
+        list[list.length - 1] = bar
       } else {
-        list.push(bar)                        // 新的一根 K 线
-        if (list.length > 300) list.shift()
+        list.push(bar)
+        if (list.length > 3500) list.shift()
       }
       return { klines: list }
     }),

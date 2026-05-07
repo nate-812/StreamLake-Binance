@@ -49,7 +49,7 @@ def init_collection() -> Collection:
             FieldSchema("summary",   DataType.VARCHAR,      max_length=512),
             FieldSchema("embedding", DataType.FLOAT_VECTOR, dim=_DIM),
         ]
-        schema = CollectionSchema(fields, description="Historical whale alert cases for RAG retrieval")
+        schema = CollectionSchema(fields, description="Historical whale alrt cases for RAG retrieval")
         col = Collection(_COLLECTION_NAME, schema)
         col.create_index(
             field_name="embedding",

@@ -22,6 +22,8 @@ export default function SummaryCard() {
 
       {!summary ? (
         <Skeleton active paragraph={{ rows: 3 }} />
+      ) : summary.lastPrice == null ? (
+        <div style={{ color: TEXT_SUB, fontSize: 13 }}>暂无成交价</div>
       ) : (
         <>
           {/* 最新价 + 涨跌幅 */}

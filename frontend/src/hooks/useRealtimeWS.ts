@@ -4,6 +4,9 @@ import { KlineBar, WhaleAlert, useMarketStore } from '../store/marketStore'
 const RECONNECT_MS = 3000
 
 export function useRealtimeWS() {
+  // 开发环境默认关闭 WS，避免后端 WS 未就绪时 Vite 控制台持续刷 EPIPE。
+  // 需要实时推送时可在启动前设置：VITE_ENABLE_WS=1 npm run dev
+  const enabled = import.meta.env.VITE_ENABLE_WS === '1'
   const prependAlerts     = useMarketStore((s) => s.prependAlerts)
   const updateLatestKline = useMarketStore((s) => s.updateLatestKline)
 
@@ -14,6 +17,7 @@ export function useRealtimeWS() {
   , [])
 
   useEffect(() => {
+    if (!enabled) return
     let ws: WebSocket | null = null
     let destroyed = false
     let timer: ReturnType<typeof setTimeout>
@@ -58,5 +62,5 @@ export function useRealtimeWS() {
       clearTimeout(timer)
       ws?.close()
     }
-  }, [prependAlerts, updateLatestKline])
+  }, [enabled, prependAlerts, updateLatestKline])
 }

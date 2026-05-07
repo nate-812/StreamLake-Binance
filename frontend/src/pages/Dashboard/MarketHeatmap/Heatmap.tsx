@@ -55,7 +55,7 @@ export default function Heatmap() {
       width:         '100%',
       height:        '100%',
       data:          treeData,
-      itemStyle:     { borderWidth: 2, borderColor: '#0d1117' },
+      itemStyle:     { borderWidth: 2, borderColor: '#0B0E11' },
       label: {
         show:      true,
         formatter: (p: any) => {
@@ -63,8 +63,8 @@ export default function Heatmap() {
           return `{name|${p.data.name}}\n{pct|${sign}${Number(p.data.pct).toFixed(2)}%}`
         },
         rich: {
-          name: { color: '#e6edf3', fontSize: 13, fontWeight: 600 },
-          pct:  { color: '#e6edf3', fontSize: 11 },
+          name: { color: '#EAECEF', fontSize: 13, fontWeight: 600 },
+          pct:  { color: '#EAECEF', fontSize: 11 },
         },
       },
       colorMappingBy: 'value',
@@ -78,7 +78,7 @@ export default function Heatmap() {
   if (option.series[0].data) {
     option.series[0].data = (option.series[0].data as any[]).map((d) => ({
       ...d,
-      itemStyle: { color: pctToColor(d.pct), borderColor: '#0d1117', borderWidth: 2 },
+      itemStyle: { color: pctToColor(d.pct), borderColor: '#0B0E11', borderWidth: 2 },
     }))
   }
 

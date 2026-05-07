@@ -4,6 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "vite",
+    "dev:local-api": "VITE_API_TARGET=http://127.0.0.1:8080 vite --host 0.0.0.0",
     "build": "tsc && vite build",
     "preview": "vite preview"
   },
