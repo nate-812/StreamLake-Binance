@@ -310,10 +310,14 @@ public class KlineAggregationJob {
         @Override
         public TriggerResult onElement(Object element, long timestamp, TimeWindow window, TriggerContext ctx)
                 throws Exception {
-            // 注册窗口关闭的事件时间 timer
+            // 注册窗口关闭的事件时间 timer（同一时间点，Flink 自动去重）
             ctx.registerEventTimeTimer(window.maxTimestamp());
-            // 注册下一次 2s 处理时间 timer
-            ctx.registerProcessingTimeTimer(ctx.getCurrentProcessingTime() + INTERVAL_MS);
+            // 对齐到窗口起点的整数倍 interval，保证同一批 trade 注册同一个时间点
+            // Flink 对相同 (key, time) 的 timer 只保留一个，彻底避免 timer 风暴
+            long windowStart = window.getStart();
+            long now         = ctx.getCurrentProcessingTime();
+            long aligned     = windowStart + ((now - windowStart) / INTERVAL_MS + 1) * INTERVAL_MS;
+            ctx.registerProcessingTimeTimer(Math.min(aligned, window.getEnd()));
             return TriggerResult.CONTINUE;
         }
 
