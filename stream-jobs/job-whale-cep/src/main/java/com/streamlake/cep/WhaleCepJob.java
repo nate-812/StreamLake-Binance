@@ -67,11 +67,11 @@ public class WhaleCepJob {
         final String alertTopic      = env("ALERT_TOPIC",       "streamlake.whale.alert");
         final String consumerGroup   = env("KAFKA_GROUP",       "flink-cep-group");
         final String dorisJdbcUrl    = env("DORIS_JDBC_URL",    "jdbc:mysql://192.168.1.10:9030/streamlake?useSSL=false");
-        final String dorisUser       = env("DORIS_USER",        "root");
-        final String dorisPassword   = env("DORIS_PASSWORD",    "");
+        final String dorisUser       = env("DORIS_USER",        "streamlake_writer");
+        final String dorisPassword   = requireEnv("DORIS_PASSWORD");
         final String mysqlJdbcUrl    = env("MYSQL_JDBC_URL",    "jdbc:mysql://192.168.1.10:3306/risk_control?useSSL=false");
-        final String mysqlUser       = env("MYSQL_USER",        "root");
-        final String mysqlPassword   = env("MYSQL_PASSWORD",    "");
+        final String mysqlUser       = env("MYSQL_USER",        "streamlake_app");
+        final String mysqlPassword   = requireEnv("MYSQL_PASSWORD");
 
         // ── 从 MySQL 预加载阈值配置 ──────────────────────────────────────
         Map<String, BigDecimal> thresholds = loadThresholdsFromMysql(
@@ -316,5 +316,13 @@ public class WhaleCepJob {
     private static String env(String key, String defaultVal) {
         String v = System.getenv(key);
         return (v == null || v.isBlank()) ? defaultVal : v.trim();
+    }
+
+    private static String requireEnv(String key) {
+        String v = System.getenv(key);
+        if (v == null || v.isBlank()) {
+            throw new IllegalArgumentException("Missing required environment variable: " + key);
+        }
+        return v.trim();
     }
 }

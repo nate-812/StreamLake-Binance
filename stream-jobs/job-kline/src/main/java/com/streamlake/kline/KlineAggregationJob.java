@@ -46,8 +46,11 @@ public class KlineAggregationJob {
         final String consumerGroup = env("KAFKA_GROUP", "flink-kline-group");
 
         final String dorisJdbcUrl = env("DORIS_JDBC_URL", "jdbc:mysql://192.168.1.10:9030/streamlake?useSSL=false");   
-        final String dorisUser = env("DORIS_USER", "root");
-        final String dorisPassword = env("DORIS_PASSWORD", "");             //定义重要的常量，调用辅助方法env获取环境变量值，如果系统无变量，则使用后边的默认值
+        final String dorisUser = env("DORIS_USER", "streamlake_writer");
+        final String dorisPassword = System.getenv("DORIS_PASSWORD");
+        if (dorisPassword == null || dorisPassword.isBlank()) {
+            throw new IllegalArgumentException("Missing required environment variable: DORIS_PASSWORD");
+        }
         final String dorisInsertSql = "INSERT INTO kline_1min " +
                 "(symbol, open_time, open, high, low, close, volume, quote_volume, trade_count, is_closed) " +
                 "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";                              // Doris 插入 SQL 语句 ，？占位符对应 KlineBar 字段，由于现在还没有清洗出KlineBar，所以先用？占位。由于有ps，在后续写入数据库时，有妙用。

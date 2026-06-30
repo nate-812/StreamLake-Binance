@@ -13,12 +13,17 @@ import requests
 import pymysql
 from datetime import datetime, timezone
 
-# ── 配置（按实际情况修改） ──────────────────────────────────────────────────
-DORIS_HOST     = "192.168.1.10"
-DORIS_PORT     = 9030
-DORIS_USER     = "root"
-DORIS_PASSWORD = ""
-DORIS_DB       = "streamlake"
+import os
+
+DORIS_HOST     = os.environ.get("DORIS_HOST", "192.168.1.10")
+DORIS_PORT     = int(os.environ.get("DORIS_PORT", "9030"))
+DORIS_USER     = os.environ.get("DORIS_USER", "streamlake_writer")
+DORIS_PASSWORD = os.environ.get("DORIS_PASSWORD")
+DORIS_DB       = os.environ.get("DORIS_DB", "streamlake")
+
+if not DORIS_PASSWORD:
+    print("错误: 缺少环境变量 DORIS_PASSWORD，为安全起见拒绝执行。", file=sys.stderr)
+    sys.exit(1)
 
 DEFAULT_SYMBOLS = [
     "BTCUSDT", "ETHUSDT", "BNBUSDT", "SOLUSDT", "XRPUSDT",
@@ -86,6 +91,7 @@ def main():
     parser = argparse.ArgumentParser(description="Binance K 线回填")
     parser.add_argument("--days",    type=int,   default=7,   help="回填多少天（默认 7）")
     parser.add_argument("--symbols", type=str,   default="",  help="逗号分隔的交易对，留空用默认列表")
+    parser.add_argument("--confirm", action="store_true", help="确认执行真实写入（无此参数则为 dry-run）")
     args = parser.parse_args()
 
     symbols = [s.strip().upper() for s in args.symbols.split(",") if s.strip()] or DEFAULT_SYMBOLS
@@ -94,8 +100,21 @@ def main():
     now_ms   = int(time.time() * 1000)
     start_ms = now_ms - days * 24 * 3600 * 1000
 
-    print(f"回填区间: {datetime.fromtimestamp(start_ms/1000)} → 现在，共 {days} 天")
-    print(f"交易对: {symbols}\n")
+    print("==================================================")
+    print("高风险操作：Binance 历史 K 线补数")
+    print("！不建议直接在生产环境执行大范围补数操作！")
+    print("==================================================")
+    print(f"预估影响范围:")
+    print(f"  回填区间: {datetime.fromtimestamp(start_ms/1000, tz=timezone.utc)} → 现在，共 {days} 天")
+    print(f"  交易对: {symbols}")
+    print(f"  目标数据库: {DORIS_HOST}:{DORIS_PORT} DB={DORIS_DB} USER={DORIS_USER}")
+    
+    if not args.confirm:
+        print("\n[DRY RUN] 运行在 Dry-Run 模式。如需真实写入，请添加 --confirm 参数。")
+        sys.exit(0)
+    else:
+        print("\n[CONFIRM] 已确认写入。3秒后开始执行...")
+        time.sleep(3)
 
     conn = pymysql.connect(
         host=DORIS_HOST, port=DORIS_PORT,

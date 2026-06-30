@@ -63,14 +63,14 @@ public class RiskControlJob {
         final String sourceTopic    = env("KAFKA_TOPIC",       "binance.trade.raw");
         final String consumerGroup  = env("KAFKA_GROUP",       "flink-risk-group");
         final String dorisJdbcUrl   = env("DORIS_JDBC_URL",    "jdbc:mysql://192.168.1.10:9030/streamlake?useSSL=false");
-        final String dorisUser      = env("DORIS_USER",        "root");
-        final String dorisPassword  = env("DORIS_PASSWORD",    "");
+        final String dorisUser      = env("DORIS_USER",        "streamlake_writer");
+        final String dorisPassword  = requireEnv("DORIS_PASSWORD");
         final String mysqlJdbcUrl   = env("MYSQL_JDBC_URL",    "jdbc:mysql://192.168.1.10:3306/risk_control?useSSL=false");
-        final String mysqlUser      = env("MYSQL_USER",        "root");
-        final String mysqlPassword  = env("MYSQL_PASSWORD",    "");
+        final String mysqlUser      = env("MYSQL_USER",        "streamlake_app");
+        final String mysqlPassword  = requireEnv("MYSQL_PASSWORD");
         final String redisHost      = env("REDIS_HOST",        "192.168.1.10");
         final int    redisPort      = Integer.parseInt(env("REDIS_PORT", "6379"));            // 从环境变量读取配置
-        final String redisPassword  = env("REDIS_PASSWORD",   "");
+        final String redisPassword  = requireEnv("REDIS_PASSWORD");
 
         StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
         env.setParallelism(3);
@@ -296,5 +296,13 @@ public class RiskControlJob {
     private static String env(String key, String defaultVal) {
         String v = System.getenv(key);
         return (v == null || v.isBlank()) ? defaultVal : v.trim();
+    }
+
+    private static String requireEnv(String key) {
+        String v = System.getenv(key);
+        if (v == null || v.isBlank()) {
+            throw new IllegalArgumentException("Missing required environment variable: " + key);
+        }
+        return v.trim();
     }
 }

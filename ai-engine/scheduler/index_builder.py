@@ -11,9 +11,12 @@ from rag.milvus_store import init_collection, upsert_cases
 
 _DORIS_HOST     = os.getenv("DORIS_HOST",     "192.168.1.10")
 _DORIS_PORT     = int(os.getenv("DORIS_PORT", "9030"))
-_DORIS_USER     = os.getenv("DORIS_USER",     "root")
-_DORIS_PASSWORD = os.getenv("DORIS_PASSWORD", "")
+_DORIS_USER     = os.getenv("DORIS_USER",     "streamlake_writer")
+_DORIS_PASSWORD = os.getenv("DORIS_PASSWORD")
 _DORIS_DB       = os.getenv("DORIS_DB",       "streamlake")
+
+if not _DORIS_PASSWORD:
+    raise ValueError("Missing required environment variable: DORIS_PASSWORD")
 
 # 每次同步最新 N 条（Doris 写时合并，取最新足够覆盖增量）
 _BATCH_LIMIT = 1000

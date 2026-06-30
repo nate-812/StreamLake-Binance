@@ -9,8 +9,8 @@ spring:
       enabled: true
   datasource:
     url: ${DORIS_JDBC_URL:jdbc:mysql://192.168.1.10:9030/streamlake?useSSL=false}
-    username: ${DORIS_USER:root}
-    password: ${DORIS_PASSWORD:}
+    username: ${DORIS_USER:streamlake_writer}
+    password: ${DORIS_PASSWORD}
     driver-class-name: com.mysql.cj.jdbc.Driver
     hikari:
       maximum-pool-size: 20
