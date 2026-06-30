@@ -6,12 +6,14 @@
 
 在部署到云端主机时：
 1. 请管理员先在 `/root/.streamlake-secrets` 文件中正确配置所有环境变量（参考 `.env.example`），并赋予 `chmod 600`。
-2. 无论是提交 Flink 任务，还是重启 Spring Boot API，**禁止**手动敲打 Java/Flink 命令。
-3. 必须通过 `ops/bin` 中的脚本执行，例如：
+2. 确认现场路径与默认值一致，或提前导出 `STREAMLAKE_ROOT`、`FLINK_HOME`、`KAFKA_HOME`、`DORIS_FE_HOME`、`DORIS_BE_HOME` 等覆盖变量。
+3. 无论是提交 Flink 任务，还是重启 Spring Boot API，**禁止**手动敲打 Java/Flink 命令。
+4. 必须通过 `ops/bin` 中的脚本执行，例如：
    ```bash
    ./ops/bin/job.sh start kline
    ./ops/bin/spring.sh restart --confirm
    ```
+5. 新脚本首次上云时必须先执行 `status` 与 `DRY_RUN=1`，确认路径、JAR、凭据和健康检查都符合现场事实。
 
 ## 2. 前端部署
 

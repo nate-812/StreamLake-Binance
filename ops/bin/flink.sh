@@ -4,39 +4,46 @@ set -euo pipefail
 source "$(dirname "$0")/common.sh"
 
 usage() {
-    echo "Usage: $0 {status|start|stop|restart} [--confirm]"
+    echo "Usage: flink.sh {status|start|stop|restart} [--confirm]"
 }
 
 ACTION=${1:-}
 CONFIRM=${2:-}
+FLINK_START=${FLINK_START:-$FLINK_HOME/bin/start-cluster.sh}
+FLINK_STOP=${FLINK_STOP:-$FLINK_HOME/bin/stop-cluster.sh}
 
 case "$ACTION" in
     status)
-        info "Checking Flink status..."
-        # Simulated check
-        systemctl is-active flink || echo "Flink is not active via systemd"
-        log_action "flink_status" "SUCCESS" "Checked Flink status"
+        require_executable "$FLINK_BIN" "Flink CLI" || fail_action "flink_status" "Flink CLI unavailable."
+        "$FLINK_BIN" list || fail_action "flink_status" "Unable to query Flink cluster."
+        log_action "flink_status" "SUCCESS" "Queried Flink cluster"
         ;;
     start)
         require_confirm "$CONFIRM" "flink_start"
-        check_dry_run "start_flink"
-        info "Starting Flink..."
-        log_action "flink_start" "SUCCESS" "Started Flink"
+        require_executable "$FLINK_START" "Flink start script" || fail_action "flink_start" "Flink start script unavailable."
+        check_dry_run "flink_start"
+        "$FLINK_START" || fail_action "flink_start" "Flink start script failed."
+        log_action "flink_start" "SUCCESS" "Started Flink cluster"
         ;;
     stop)
         require_confirm "$CONFIRM" "flink_stop"
-        check_dry_run "stop_flink"
-        info "Stopping Flink..."
-        log_action "flink_stop" "SUCCESS" "Stopped Flink"
+        require_executable "$FLINK_STOP" "Flink stop script" || fail_action "flink_stop" "Flink stop script unavailable."
+        check_dry_run "flink_stop"
+        "$FLINK_STOP" || fail_action "flink_stop" "Flink stop script failed."
+        log_action "flink_stop" "SUCCESS" "Stopped Flink cluster"
         ;;
     restart)
         require_confirm "$CONFIRM" "flink_restart"
-        check_dry_run "restart_flink"
-        info "Restarting Flink..."
-        log_action "flink_restart" "SUCCESS" "Restarted Flink"
+        require_executable "$FLINK_STOP" "Flink stop script" || fail_action "flink_restart" "Flink stop script unavailable."
+        require_executable "$FLINK_START" "Flink start script" || fail_action "flink_restart" "Flink start script unavailable."
+        check_dry_run "flink_restart"
+        "$FLINK_STOP" || fail_action "flink_restart" "Flink stop script failed."
+        "$FLINK_START" || fail_action "flink_restart" "Flink start script failed."
+        log_action "flink_restart" "SUCCESS" "Restarted Flink cluster"
         ;;
-    --help)
+    --help|-h|"")
         usage
+        [ -n "$ACTION" ]
         ;;
     *)
         usage

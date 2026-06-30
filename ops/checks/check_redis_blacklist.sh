@@ -1,15 +1,24 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-REDIS_HOST=${REDIS_HOST:-"192.168.1.10"}
+REDIS_HOST=${REDIS_HOST:-192.168.1.10}
 REDIS_PORT=${REDIS_PORT:-6379}
-REDIS_PASSWORD=${REDIS_PASSWORD:-""}
+REDIS_USERNAME=${REDIS_USERNAME:-}
+REDIS_PATTERN=${REDIS_PATTERN:-risk:blacklist:*}
 
-AUTH_ARG=""
-if [ -n "$REDIS_PASSWORD" ]; then
-    AUTH_ARG="-a $REDIS_PASSWORD"
+if ! command -v redis-cli >/dev/null 2>&1; then
+    echo "ERROR: redis-cli not found" >&2
+    exit 2
+fi
+
+ARGS=(-h "$REDIS_HOST" -p "$REDIS_PORT")
+if [ -n "$REDIS_USERNAME" ]; then
+    ARGS+=(--user "$REDIS_USERNAME")
 fi
 
 echo "=== Redis Blacklist Keys ==="
-# 使用 SCAN 避免 KEYS 导致的阻塞
-redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" $AUTH_ARG --scan --pattern "risk:blacklist:*"
+if [ -n "${REDIS_PASSWORD:-}" ]; then
+    REDISCLI_AUTH="$REDIS_PASSWORD" redis-cli "${ARGS[@]}" --scan --pattern "$REDIS_PATTERN"
+else
+    redis-cli "${ARGS[@]}" --scan --pattern "$REDIS_PATTERN"
+fi
