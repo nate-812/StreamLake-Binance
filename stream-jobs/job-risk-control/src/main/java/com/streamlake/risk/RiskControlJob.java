@@ -67,9 +67,10 @@ public class RiskControlJob {
         final String dorisPassword  = env("DORIS_PASSWORD",    "");
         final String mysqlJdbcUrl   = env("MYSQL_JDBC_URL",    "jdbc:mysql://192.168.1.10:3306/risk_control?useSSL=false");
         final String mysqlUser      = env("MYSQL_USER",        "root");
-        final String mysqlPassword  = env("MYSQL_PASSWORD",    "123456");
+        final String mysqlPassword  = env("MYSQL_PASSWORD",    "");
         final String redisHost      = env("REDIS_HOST",        "192.168.1.10");
         final int    redisPort      = Integer.parseInt(env("REDIS_PORT", "6379"));            // 从环境变量读取配置
+        final String redisPassword  = env("REDIS_PASSWORD",   "");
 
         StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
         env.setParallelism(3);
@@ -111,7 +112,7 @@ public class RiskControlJob {
                 .process(new RiskControlFunction());
 
         // ── Sink-1：Redis 黑名单（TTL = 24h）─────────────────────────────
-        triggers.addSink(new RedisBlacklistSink(redisHost, redisPort))
+        triggers.addSink(new RedisBlacklistSink(redisHost, redisPort, redisPassword))
                 .name("redis-blacklist-sink");                       // 黑名单sink，顺便触发构造函数，将redis连接参数赋值给成员变量用于创建jedispool，下方同理
 
         // ── Sink-2：Doris risk_trigger 审计表 ────────────────────────────
@@ -219,18 +220,20 @@ public class RiskControlJob {
 
         private final String host;
         private final int port;
+        private final String password;
         private transient JedisPool jedisPool;
 
-        RedisBlacklistSink(String host, int port) {
+        RedisBlacklistSink(String host, int port, String password) {
             this.host = host;
             this.port = port;
+            this.password = password;
         }
 
         @Override
         public void open(OpenContext openContext) throws Exception {
             JedisPoolConfig config = new JedisPoolConfig();
             config.setMaxTotal(10);
-            jedisPool = new JedisPool(config, host, port);                     // 还是老一套，用成员变量建立jedispool
+            jedisPool = new JedisPool(config, host, port, 2000, password.isBlank() ? null : password);                     // 还是老一套，用成员变量建立jedispool
         }
 
         @Override

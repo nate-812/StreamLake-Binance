@@ -11,10 +11,12 @@ public class TradeEventDeserializer implements Serializable {
             .configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
 
     public TradeEvent deserialize(String json) {
+        if (json == null || json.isBlank()) return null;
         try {
             return MAPPER.readValue(json, TradeEvent.class);
         } catch (Exception e) {
-            throw new RuntimeException("Failed to deserialize TradeEvent: " + json, e);
+            // 跳过格式错误的消息，不抛异常不崩 Subtask，水位线正常推进
+            return null;
         }
     }
 }

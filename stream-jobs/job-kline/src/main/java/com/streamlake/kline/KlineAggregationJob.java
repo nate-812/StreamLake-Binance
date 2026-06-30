@@ -18,6 +18,8 @@ import org.apache.flink.streaming.api.functions.sink.legacy.RichSinkFunction;
 import org.apache.flink.streaming.api.functions.sink.legacy.SinkFunction;
 import org.apache.flink.streaming.api.functions.windowing.ProcessWindowFunction;
 import org.apache.flink.streaming.api.windowing.assigners.TumblingEventTimeWindows;
+import org.apache.flink.streaming.api.windowing.triggers.Trigger;
+import org.apache.flink.streaming.api.windowing.triggers.TriggerResult;
 import org.apache.flink.streaming.api.windowing.windows.TimeWindow;
 import org.apache.flink.util.Collector;
 import org.apache.flink.util.OutputTag;
@@ -74,10 +76,10 @@ public class KlineAggregationJob {
                 //env.fromSource：这是启动抽水机的开关。它告诉 Flink 按照之前定义的 source（Kafka 配置）去拉取数据。
                 //WatermarkStrategy.noWatermarks()：当前数据为json，无法从黑盒中提取事件时间，所以先不生成水位线，等后续处理再生成。
                 //trade-kafka-source：这是抽水机的名称，用于在 Flink UI 中识别它。
-                .map(deserializer::deserialize)                           // 调用 TradeEvent 反序列化器deserializer 反序列化 Kafka 值为 TradeEvent 对象
-                .returns(TradeEvent.class)                                  // 声明返回的类型为 TradeEvent，帮助 Flink 正确处理类型信息
-                .filter(t -> t.getSymbol() != null && t.getPrice() != null && t.getQty() != null)   
-                // 过滤无效数据，只保留 symbol、price、qty 都不为 null 的交易事件
+                .map(deserializer::deserialize)
+                .returns(TradeEvent.class)
+                // null = 格式错误消息（deserializer 已静默处理），再过滤字段缺失的数据
+                .filter(t -> t != null && t.getSymbol() != null && t.getPrice() != null && t.getQty() != null)
                 .assignTimestampsAndWatermarks(
                         WatermarkStrategy.<TradeEvent>forBoundedOutOfOrderness(Duration.ofSeconds(5))
                                 .withTimestampAssigner((SerializableTimestampAssigner<TradeEvent>) (event, ts) -> event.getEventTime())
@@ -95,6 +97,7 @@ public class KlineAggregationJob {
         SingleOutputStreamOperator<KlineBar> klineHigh = highVolTrades
                 .keyBy((KeySelector<TradeEvent, String>) t -> t.getSymbol().toUpperCase(Locale.ROOT))
                 .window(TumblingEventTimeWindows.of(Duration.ofMinutes(1)))
+                .trigger(new PeriodicAndFinalTrigger())
                 .allowedLateness(Duration.ofSeconds(5))
                 .sideOutputLateData(lateDataTag)
                 .aggregate(new OhlcvAggregateFunction(), new KlineWindowFunction());
@@ -102,6 +105,7 @@ public class KlineAggregationJob {
         SingleOutputStreamOperator<KlineBar> klineLow = lowVolTrades
                 .keyBy((KeySelector<TradeEvent, String>) t -> t.getSymbol().toUpperCase(Locale.ROOT))
                 .window(TumblingEventTimeWindows.of(Duration.ofMinutes(1)))
+                .trigger(new PeriodicAndFinalTrigger())
                 .allowedLateness(Duration.ofSeconds(5))
                 .sideOutputLateData(lateDataTag)
                 .aggregate(new OhlcvAggregateFunction(), new KlineWindowFunction());
@@ -120,34 +124,41 @@ public class KlineAggregationJob {
         env.execute("streamlake-kline-aggregation");
     }
 
-    // 自定义 SinkFunction，将 KlineBar 数据写入 Doris 数据库
-    static class DorisJdbcUpsertSink extends RichSinkFunction<KlineBar> {        //使用Rich函数，因为它提供了 open() 和 close() 方法，可以管理 JDBC 连接的生命周期，只open 一次，避免每次写入都建立连接和关闭连接。
+    /**
+     * 批量写入 Sink：攒够 BATCH_SIZE 条或超过 FLUSH_INTERVAL_MS 自动 flush。
+     * 相比逐条 executeUpdate()，批量 executeBatch() 可将 Doris 写入压力降低 10-20 倍。
+     */
+    static class DorisJdbcUpsertSink extends RichSinkFunction<KlineBar> {
+        private static final int  BATCH_SIZE       = 50;
+        private static final long FLUSH_INTERVAL_MS = 3_000L;
+
         private final String jdbcUrl;
         private final String username;
         private final String password;
-        private final String sql;               // final修饰成员变量，保证在任务中稳定不变，当jobmanager读取任务配置时会调用构造函数，被 115 行的构造函数赋值。
+        private final String sql;
 
-        private transient Connection conn;
-        private transient PreparedStatement ps;        // transient 修饰 JDBC 连接和 PreparedStatement，这两个是连接（指针），只在本地有效，所以打上 transient 标记，拒绝序列化。    那么怎么在 taskmanager 们使用呢？ 在执行 open() 方法时，方法发现 conn 和 ps 都是 null，于是用已经传过来的 jdbcUrl 等参数建立连接和创建 PreparedStatement。
+        private transient Connection        conn;
+        private transient PreparedStatement ps;
+        private transient int               batchCount;
+        private transient long              lastFlushMs;
 
-        // 构造函数，初始化 JDBC 连接
         DorisJdbcUpsertSink(String jdbcUrl, String username, String password, String sql) {
-            this.jdbcUrl = jdbcUrl;
-            this.username = username;
-            this.password = password;
-            this.sql = sql;
-        }                                       //这个构造函数在 main 方法中被调用，传入了 Doris 的 JDBC 连接参数和 SQL 语句(???的那个)，将 main 中的局部变量赋值给这个类的成员变量，才能让 taskmanager 们使用， 这个真是太精妙了。
-
-        // 打开连接，创建 PreparedStatement
-        @Override
-        public void open(OpenContext openContext) throws Exception {
-            Class.forName("com.mysql.cj.jdbc.Driver");                             // 激活一下 JDBC 驱动类
-            conn = DriverManager.getConnection(jdbcUrl, username, password);       // 建立连接，使用的正是 main 方法中传入的参数。
-            conn.setAutoCommit(true);                                              // 设置自动提交，每条都直接写入 Doris。
-            ps = conn.prepareStatement(sql);                                      // 把预编译的 SQL 语句（???占位的那个）发给数据库，让数据库预先写好带？？占位符的执行计划，等待 invoke 方法填充参数。因为ps本身是基于内存的指针，且依附于conn，所以和conn一样不能被序列化。
+            this.jdbcUrl   = jdbcUrl;
+            this.username  = username;
+            this.password  = password;
+            this.sql       = sql;
         }
 
-        // 执行写入操作，每条 KlineBar 数据对应一次 SQL 执行
+        @Override
+        public void open(OpenContext openContext) throws Exception {
+            Class.forName("com.mysql.cj.jdbc.Driver");
+            conn = DriverManager.getConnection(jdbcUrl, username, password);
+            conn.setAutoCommit(false);          // 批量提交，关闭自动提交
+            ps   = conn.prepareStatement(sql);
+            batchCount  = 0;
+            lastFlushMs = System.currentTimeMillis();
+        }
+
         @Override
         public void invoke(KlineBar bar, SinkFunction.Context context) throws Exception {
             ps.setString(1, bar.getSymbol());
@@ -159,20 +170,30 @@ public class KlineAggregationJob {
             ps.setBigDecimal(7, bar.getVolume());
             ps.setBigDecimal(8, bar.getQuoteVolume());
             ps.setInt(9, bar.getTradeCount());
-            ps.setInt(10, 1);             // Doris 中 is_closed 用 TINYINT(0/1) 更兼容。
-            ps.executeUpdate();
+            ps.setInt(10, bar.isClosed() ? 1 : 0);
+            ps.addBatch();
+            batchCount++;
+
+            long now = System.currentTimeMillis();
+            if (batchCount >= BATCH_SIZE || (now - lastFlushMs) >= FLUSH_INTERVAL_MS) {
+                flush();
+            }
         }
 
+        private void flush() throws Exception {
+            if (batchCount == 0) return;
+            ps.executeBatch();
+            conn.commit();
+            ps.clearBatch();
+            batchCount  = 0;
+            lastFlushMs = System.currentTimeMillis();
+        }
 
-        // 关闭 PreparedStatement 和 Connection
         @Override
         public void close() throws Exception {
-            if (ps != null) {
-                ps.close();             // 关闭 PreparedStatement，告诉数据库，我不玩了，刚刚给你预编译的 sql 你扔了吧。    
-            }
-            if (conn != null) {
-                conn.close();          // 关闭 Connection，不连Doris了。    
-            }
+            try { flush(); } catch (Exception ignored) {}
+            if (ps   != null) ps.close();
+            if (conn != null) conn.close();
         }
     }
 
@@ -254,7 +275,7 @@ public class KlineAggregationJob {
     static class KlineWindowFunction extends ProcessWindowFunction<OhlcvAccumulator, KlineBar, String, TimeWindow> {
         @Override
         public void process(String key, Context context, Iterable<OhlcvAccumulator> elements, Collector<KlineBar> out) {
-            OhlcvAccumulator acc = elements.iterator().next();              //原本这是个可迭代对象，但增量处理已经算好数据 acc对象，所以.next() 取唯一对象。
+            OhlcvAccumulator acc = elements.iterator().next();
             KlineBar bar = new KlineBar();
             bar.setSymbol(key);
             bar.setOpenTime(new Timestamp(context.window().getStart()));
@@ -264,13 +285,60 @@ public class KlineAggregationJob {
             bar.setClose(scale(acc.close));
             bar.setVolume(scale(acc.volume));
             bar.setQuoteVolume(scale(acc.quoteVolume));
-            bar.setTradeCount(acc.tradeCount);                        // 加上时间戳，并给数据整容
-            bar.setClosed(true);                                      // 设置为true，表示这个 K 线已经收盘，不会再变了。
+            bar.setTradeCount(acc.tradeCount);
+            // 水位线已越过窗口末尾 → 窗口已关闭，标记为 closed
+            boolean isClosed = context.currentWatermark() >= context.window().maxTimestamp();
+            bar.setClosed(isClosed);
             out.collect(bar);
         }
 
         private BigDecimal scale(BigDecimal val) {
             return val.setScale(8, RoundingMode.HALF_UP);
-        }                                                           //增量处理为了保持精度有很多小数，这里统一设置小数位为8位，四舍五入。
+        }
+    }
+
+    /**
+     * 自定义 Trigger：
+     *   - 每 5 秒触发一次中间结果（FIRE，不清除累加器）→ is_closed=0
+     *   - 水位线到达窗口末尾时触发最终结果（FIRE，保留 allowedLateness 语义）→ is_closed=1
+     * Doris UNIQUE KEY MoW 保证同 (symbol, open_time) 后写覆盖前写。
+     * 5s 而非 2s：降低 Doris 写入频率，避免同步 JDBC Sink 过载反压。
+     */
+    static class PeriodicAndFinalTrigger extends Trigger<Object, TimeWindow> {
+        private static final long INTERVAL_MS = 5_000L;
+
+        @Override
+        public TriggerResult onElement(Object element, long timestamp, TimeWindow window, TriggerContext ctx)
+                throws Exception {
+            // 注册窗口关闭的事件时间 timer（同一时间点，Flink 自动去重）
+            ctx.registerEventTimeTimer(window.maxTimestamp());
+            // 对齐到窗口起点的整数倍 interval，保证同一批 trade 注册同一个时间点
+            // Flink 对相同 (key, time) 的 timer 只保留一个，彻底避免 timer 风暴
+            long windowStart = window.getStart();
+            long now         = ctx.getCurrentProcessingTime();
+            long aligned     = windowStart + ((now - windowStart) / INTERVAL_MS + 1) * INTERVAL_MS;
+            ctx.registerProcessingTimeTimer(Math.min(aligned, window.getEnd()));
+            return TriggerResult.CONTINUE;
+        }
+
+        @Override
+        public TriggerResult onProcessingTime(long time, TimeWindow window, TriggerContext ctx) throws Exception {
+            // 继续注册下一个 2s timer，形成周期性触发
+            ctx.registerProcessingTimeTimer(time + INTERVAL_MS);
+            return TriggerResult.FIRE;          // 发出中间结果，累加器保留
+        }
+
+        @Override
+        public TriggerResult onEventTime(long time, TimeWindow window, TriggerContext ctx) throws Exception {
+            if (time == window.maxTimestamp()) {
+                return TriggerResult.FIRE;      // 发出最终结果，由 allowedLateness 控制清理时机
+            }
+            return TriggerResult.CONTINUE;
+        }
+
+        @Override
+        public void clear(TimeWindow window, TriggerContext ctx) throws Exception {
+            ctx.deleteEventTimeTimer(window.maxTimestamp());
+        }
     }
 }

@@ -27,7 +27,7 @@ public class KlineController {
         if (!"1min".equalsIgnoreCase(interval)) {
             throw new IllegalArgumentException("目前仅支持 interval=1min");
         }
-        int safeLimit = Math.max(1, Math.min(limit, 1000));
+        int safeLimit = Math.max(1, Math.min(limit, 10000));
         return klineService.listKlines(symbol, safeLimit);
     }
 }

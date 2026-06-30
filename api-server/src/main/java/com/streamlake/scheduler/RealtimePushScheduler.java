@@ -55,10 +55,11 @@ public class RealtimePushScheduler {
     }
 
     /**
-     * 每 10s 推送活跃交易对的最新 K 线（全量快照，前端直接刷新最新一根蜡烛图）。
+     * 每 2s 推送活跃交易对的最新 K 线（全量快照，前端直接刷新最新一根蜡烛图）。
      * 活跃交易对定义：近 2 分钟内 kline_1min 有记录的 symbol，最多取 20 个。
+     * 使用批量查询代替 N 次单条查询，避免 N+1 问题。
      */
-    @Scheduled(fixedDelay = 10_000)
+    @Scheduled(fixedDelay = 2_000)
     public void pushLatestKlines() {
         List<String> activeSymbols;
         try {
@@ -72,33 +73,31 @@ public class RealtimePushScheduler {
         }
         if (activeSymbols.isEmpty()) return;
 
-        List<Map<String, Object>> snapshots = activeSymbols.stream()
-                .map(sym -> {
-                    try {
-                        List<KlineBarView> bars = klineService.listKlines(sym, 1);
-                        if (bars.isEmpty()) return null;
-                        KlineBarView bar = bars.get(0);
-                        Map<String, Object> m = new LinkedHashMap<>();
-                        m.put("symbol", bar.symbol());
-                        m.put("openTime", bar.openTime());
-                        m.put("open", bar.open());
-                        m.put("high", bar.high());
-                        m.put("low", bar.low());
-                        m.put("close", bar.close());
-                        m.put("volume", bar.volume());
-                        m.put("quoteVolume", bar.quoteVolume());
-                        m.put("tradeCount", bar.tradeCount());
-                        return m;
-                    } catch (Exception e) {
-                        return null;
-                    }
+        List<KlineBarView> bars;
+        try {
+            bars = klineService.listLatestKlines(activeSymbols);
+        } catch (Exception e) {
+            return;
+        }
+        if (bars.isEmpty()) return;
+
+        List<Map<String, Object>> snapshots = bars.stream()
+                .map(bar -> {
+                    Map<String, Object> m = new LinkedHashMap<>();
+                    m.put("symbol",      bar.symbol());
+                    m.put("openTime",    bar.openTime());
+                    m.put("open",        bar.open());
+                    m.put("high",        bar.high());
+                    m.put("low",         bar.low());
+                    m.put("close",       bar.close());
+                    m.put("volume",      bar.volume());
+                    m.put("quoteVolume", bar.quoteVolume());
+                    m.put("tradeCount",  bar.tradeCount());
+                    return m;
                 })
-                .filter(m -> m != null)
                 .toList();
 
-        if (!snapshots.isEmpty()) {
-            broadcast("kline.latest.batch", Map.of("items", snapshots));
-        }
+        broadcast("kline.latest.batch", Map.of("items", snapshots));
     }
 
     private void broadcast(String type, Map<String, Object> payload) {
