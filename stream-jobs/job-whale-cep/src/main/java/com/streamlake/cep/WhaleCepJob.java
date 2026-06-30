@@ -71,7 +71,7 @@ public class WhaleCepJob {
         final String dorisPassword   = env("DORIS_PASSWORD",    "");
         final String mysqlJdbcUrl    = env("MYSQL_JDBC_URL",    "jdbc:mysql://192.168.1.10:3306/risk_control?useSSL=false");
         final String mysqlUser       = env("MYSQL_USER",        "root");
-        final String mysqlPassword   = env("MYSQL_PASSWORD",    "123456");
+        final String mysqlPassword   = env("MYSQL_PASSWORD",    "");
 
         // ── 从 MySQL 预加载阈值配置 ──────────────────────────────────────
         Map<String, BigDecimal> thresholds = loadThresholdsFromMysql(
